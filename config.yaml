@@ -47,6 +47,12 @@ slo:
   stop_ms: 200
   step_ms: 10
 
+metrics:
+  # Goodput definition:
+  #   "mean_throughput" : (1/N) * sum over good samples of (1/latency)  [default]
+  #   "wallclock"       : (# good samples) / (wall-clock span)          [spec §6]
+  goodput_mode: "mean_throughput"
+
 runtime:
   warmup_iters: 20                               # CUDA warmup runs per graph (excluded from timing)
   measure_iters: 1                               # measured repeats per (segment,batch) service-time probe

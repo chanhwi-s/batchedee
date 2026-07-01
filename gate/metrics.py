@@ -32,19 +32,37 @@ def wallclock(completion: np.ndarray, arrivals: np.ndarray, ids: np.ndarray) -> 
 
 
 def goodput_vs_slo(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray,
-                   slo_ms_grid: np.ndarray) -> np.ndarray:
-    """Goodput (good samples / wall-clock) for each SLO in the grid.
+                   slo_ms_grid: np.ndarray, mode: str = "mean_throughput") -> np.ndarray:
+    """Goodput for each SLO in the grid, over the common set only.
 
-    good sample := per-sample latency <= SLO, counted over common_ids only.
+    Two definitions (selected by `mode`):
+
+    * "mean_throughput" (default): average per-sample throughput —
+          goodput(SLO) = (1/N) * Σ_{i : latency_i <= SLO} (1 / latency_i)
+      Each good sample contributes its own throughput (1/latency, in 1/s); samples
+      that miss the SLO contribute 0, and N is the full common-set size, so misses
+      drag the mean down. Low-latency samples (e.g. seg1 exits) are rewarded more.
+
+    * "wallclock" (spec §6): goodput(SLO) = (# good samples) / (wall-clock span).
+      wall-clock = last completion - first arrival over the common set.
     """
     completion, _ = simulate(sched, arrivals)
-    lat = completion - arrivals                       # seconds
-    lat_c = lat[common_ids]
-    wc = wallclock(completion, arrivals, common_ids)  # seconds
+    lat_c = (completion - arrivals)[common_ids]       # seconds, > 0
+    N = len(common_ids)
     out = np.empty(len(slo_ms_grid), dtype=float)
+
+    if mode == "wallclock":
+        wc = wallclock(completion, arrivals, common_ids)
+        for i, slo_ms in enumerate(slo_ms_grid):
+            good = int(np.sum(lat_c <= slo_ms / 1000.0))
+            out[i] = good / wc if wc > 0 else 0.0
+        return out
+
+    # mean_throughput
+    inv = 1.0 / lat_c                                  # per-sample throughput (1/s)
     for i, slo_ms in enumerate(slo_ms_grid):
-        good = int(np.sum(lat_c <= slo_ms / 1000.0))
-        out[i] = good / wc if wc > 0 else 0.0
+        good_mask = lat_c <= slo_ms / 1000.0
+        out[i] = float(inv[good_mask].sum()) / N if N > 0 else 0.0
     return out
 
 

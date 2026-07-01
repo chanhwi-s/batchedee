@@ -55,19 +55,22 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
     prop = schedules["proposed"]  # {B: Schedule}
     all_scheds = [schedules["plain"], schedules["naive"], *prop.values()]
     common = metrics.common_completed(all_scheds)
+    mode = cfg.get_path("metrics.goodput_mode", "mean_throughput")
 
     fig, ax = plt.subplots(figsize=(8, 5.5))
-    ax.plot(slo, metrics.goodput_vs_slo(schedules["plain"], arr, common, slo),
+    ax.plot(slo, metrics.goodput_vs_slo(schedules["plain"], arr, common, slo, mode),
             "k--", lw=2, label="plain")
-    ax.plot(slo, metrics.goodput_vs_slo(schedules["naive"], arr, common, slo),
+    ax.plot(slo, metrics.goodput_vs_slo(schedules["naive"], arr, common, slo, mode),
             color="0.45", ls=":", lw=2, label="naive")
     cmap = plt.cm.viridis(np.linspace(0, 0.9, len(prop)))
     for c, (B, sched) in zip(cmap, sorted(prop.items())):
-        ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo),
+        ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode),
                 color=c, lw=1.8, label=f"proposed seg2={B}")
 
+    ylabel = ("Goodput  (1/N · Σ 1/latency, samples/s)" if mode == "mean_throughput"
+              else "Goodput (good samples / sec)")
     ax.set_xlabel("Latency SLO (ms)")
-    ax.set_ylabel("Goodput (good samples / sec)")
+    ax.set_ylabel(ylabel)
     ax.set_title(f"SLO vs Goodput  (λ={lam:g} req/s, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
