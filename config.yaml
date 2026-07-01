@@ -1,0 +1,68 @@
+# =============================================================================
+# Goodput-Evaluation Runtime for Early-Exit ViT (ViT-B/16 + LPH, 2-stage batching)
+# Target HW: single NVIDIA RTX 5090, ONNX Runtime CUDA Execution Provider.
+# All knobs live here. Paths marked (FILL IN) must be set for your server.
+# =============================================================================
+
+data:
+  # Path to ImageNet val on the server (ImageFolder layout: val/<class>/*.JPEG)
+  imagenet_val_dir: "/home2/imagenet/val"      # (FILL IN if different)
+  num_requests: 2000                            # N requests drawn from val
+  image_size: 224
+  # timm standard preprocessing (vit_base_patch16_224): resize 256 -> center-crop 224
+  resize: 256
+  crop: 224
+  mean: [0.5, 0.5, 0.5]                         # timm ViT default (inception-style)
+  std:  [0.5, 0.5, 0.5]
+  interpolation: "bicubic"
+
+model:
+  best_ckpt_path: "checkpoints/best.pth"        # trained EE-ViT-B/16 LPH checkpoint
+  num_classes: 1000
+  hidden_dim: 768
+  exit_after_block: 6                            # LPH attached after 6th encoder block
+  timm_model: "vit_base_patch16_224"            # used by `plain` (ImageNet pretrained)
+
+early_exit:
+  confidence_threshold: 0.7                      # max-softmax >= threshold -> exit at seg1
+                                                 # fixed across the SLO sweep
+
+batching:
+  seg1_batch: 32                                 # seg1 accumulation batch (all runtimes)
+  seg2_batch: 16                                 # proposed seg2 flush size (single-run default)
+  seg2_batch_sweep: [2, 4, 8, 16, 32]            # plot 1: one curve per seg2 batch size
+
+arrivals:
+  lambda: 500.0                                  # single Poisson rate (requests/sec) for KDE/CDF
+  # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
+  lambda_sweep:
+    start: 100.0
+    stop: 3000.0
+    step: 100.0
+  seed: 1234                                     # fixes arrival trace + request sampling
+
+slo:
+  # Latency SLO sweep for goodput plot (milliseconds)
+  start_ms: 0
+  stop_ms: 200
+  step_ms: 10
+
+runtime:
+  warmup_iters: 20                               # CUDA warmup runs per graph (excluded from timing)
+  measure_iters: 1                               # measured repeats per (segment,batch) service-time probe
+  providers: ["CUDAExecutionProvider", "CPUExecutionProvider"]
+  # ORT session options
+  graph_optimization_level: "ORT_ENABLE_ALL"
+  intra_op_num_threads: 0                        # 0 = ORT default
+  # Cache measured (segment,batch)->service_time to avoid re-timing static graphs.
+  # naive seg2 is ALWAYS measured per-batch (dynamic count) regardless of this flag.
+  cache_static_service_times: true
+
+paths:
+  onnx_dir: "artifacts/onnx"                     # exported + cached ONNX graphs
+  plots_dir: "artifacts/plots"                   # output figures
+  results_dir: "artifacts/results"               # raw per-sample records (npz/json)
+
+plots:
+  dpi: 150
+  format: "png"

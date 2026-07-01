@@ -1,0 +1,18 @@
+# Core
+numpy
+pyyaml
+matplotlib
+scipy            # optional (KDE); a fallback is used if absent
+
+# Model / export (run on the RTX 5090 server)
+torch
+torchvision
+timm
+onnx
+
+# Inference — install the CUDA build on the server:
+#   pip install onnxruntime-gpu
+# For CPU-only local sanity checks you can instead:
+#   pip install onnxruntime
+onnxruntime-gpu
+pillow
