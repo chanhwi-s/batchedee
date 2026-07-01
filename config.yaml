@@ -62,6 +62,9 @@ paths:
   onnx_dir: "artifacts/onnx"                     # exported + cached ONNX graphs
   plots_dir: "artifacts/plots"                   # output figures
   results_dir: "artifacts/results"               # raw per-sample records (npz/json)
+  # Writable HuggingFace/timm cache (avoids Permission denied on shared caches).
+  # Leave as-is unless you already have a writable HF_HOME you prefer.
+  hf_cache: "artifacts/hf_cache"
 
 plots:
   dpi: 150

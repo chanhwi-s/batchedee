@@ -54,6 +54,28 @@ def ensure_dirs(cfg: Config) -> None:
         os.makedirs(cfg.paths[k], exist_ok=True)
 
 
+def setup_hf_cache(cfg: Config) -> str:
+    """Point HuggingFace/timm caches at a writable dir.
+
+    Fixes `PermissionError` when the system default (e.g. a shared /home/shared
+    cache) is not writable. If HF_HOME is already set AND writable, it is kept.
+    """
+    env_home = os.environ.get("HF_HOME")
+    if env_home and os.access(os.path.dirname(env_home) or "/", os.W_OK):
+        try:
+            os.makedirs(env_home, exist_ok=True)
+            return env_home
+        except OSError:
+            pass
+    cache = os.path.abspath(cfg.paths.get("hf_cache", "artifacts/hf_cache"))
+    os.makedirs(cache, exist_ok=True)
+    os.environ["HF_HOME"] = cache
+    os.environ["HF_HUB_CACHE"] = os.path.join(cache, "hub")
+    os.environ["HUGGINGFACE_HUB_CACHE"] = os.path.join(cache, "hub")
+    os.environ["TRANSFORMERS_CACHE"] = cache
+    return cache
+
+
 # --------------------------------------------------------------------------- #
 # ONNX Runtime session
 # --------------------------------------------------------------------------- #

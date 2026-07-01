@@ -1,3 +1,25 @@
-*.pyc
+# Checkpoints / weights (too large for git)
+checkpoints/
 /checkpoints
+*.pth
+*.pt
+
+# Exported graphs, results, plots, caches
+artifacts/
+*.onnx
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# project-local
 claude.md

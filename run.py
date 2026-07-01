@@ -26,7 +26,7 @@ from gate import export as export_mod
 from gate import plots as plots_mod
 from gate import runtimes
 from gate.data import load_requests
-from gate.util import ensure_dirs, load_config
+from gate.util import ensure_dirs, load_config, setup_hf_cache
 
 
 def _sched_path(cfg) -> str:
@@ -87,6 +87,8 @@ def main():
     args = ap.parse_args()
 
     cfg = load_config(args.config)
+    cache = setup_hf_cache(cfg)          # writable HF/timm cache before timm import
+    print(f"[env] HF cache -> {cache}")
     {"export": cmd_export, "run": cmd_run, "plot": cmd_plot, "all": cmd_all}[args.command](cfg, args)
 
 
