@@ -7,7 +7,7 @@
 data:
   # Path to ImageNet val on the server (ImageFolder layout: val/<class>/*.JPEG)
   imagenet_val_dir: "/home2/imagenet/val"      # (FILL IN if different)
-  num_requests: 2000                            # N requests drawn from val
+  num_requests: 5000                            # N requests drawn from val
   image_size: 224
   # timm standard preprocessing (vit_base_patch16_224): resize 256 -> center-crop 224
   resize: 256
@@ -28,9 +28,9 @@ early_exit:
                                                  # fixed across the SLO sweep
 
 batching:
-  seg1_batch: 32                                 # seg1 accumulation batch (all runtimes)
+  seg1_batch: 1                                 # seg1 accumulation batch (all runtimes)
   seg2_batch: 16                                 # proposed seg2 flush size (single-run default)
-  seg2_batch_sweep: [2, 4, 8, 16, 32]            # plot 1: one curve per seg2 batch size
+  seg2_batch_sweep: [1, 2, 4, 8, 16, 32]            # plot 1: one curve per seg2 batch size
 
 arrivals:
   lambda: 500.0                                  # single Poisson rate (requests/sec) for KDE/CDF

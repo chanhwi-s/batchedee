@@ -33,7 +33,7 @@ def _kde(data: np.ndarray, grid: np.ndarray) -> np.ndarray:
         return np.zeros_like(grid)
     try:
         from scipy.stats import gaussian_kde
-        return gaussian_kde(data)(grid)
+        return gaussian_kde(data, bw_method=0.4)(grid)
     except Exception:
         # Silverman-bandwidth Gaussian KDE fallback (no scipy).
         n = len(data)
