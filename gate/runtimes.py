@@ -224,6 +224,68 @@ def latencies(sched: Schedule, arrivals: np.ndarray):
     return lat, mask
 
 
+# Additive per-sample latency decomposition (all in seconds; 0 where N/A).
+BREAKDOWN_KEYS = ("formation_wait", "gpu_wait", "stage1_compute",
+                  "seg2_queue_wait", "seg2_compute")
+
+
+def simulate_breakdown(sched: Schedule, arrivals: np.ndarray) -> dict:
+    """Decompose each completed sample's latency into additive components.
+
+    For every sample:   latency = formation_wait + gpu_wait + stage1_compute
+                                   (+ seg2_queue_wait + seg2_compute)
+      * formation_wait  : arrival -> its seg1/whole batch is full (ready)
+      * gpu_wait        : batch ready -> seg1/whole actually starts (GPU busy)
+      * stage1_compute  : seg1 (or whole-model, for plain) service time
+      * seg2_queue_wait : seg1 done -> its seg2 flush starts (queue-fill + GPU)
+      * seg2_compute    : seg2 service time
+    Returns {key: np.ndarray[N]} plus 'completed' bool mask. Non-completed -> 0.
+    """
+    n = sched.n_requests
+    comp = {k: np.zeros(n, dtype=float) for k in BREAKDOWN_KEYS}
+    completed = np.zeros(n, dtype=bool)
+
+    prod: dict[int, tuple] = {}     # sample -> (ready, start, end) of producing seg1/whole
+    seg2ref: dict[int, tuple] = {}  # sample -> (start, end) of its seg2 op
+    stage1_done: set[int] = set()   # samples that COMPLETE at a seg1/whole op (exit/plain)
+    gpu_free = 0.0
+    for op in sched.ops:
+        if op.gate_on_arrival and len(op.members):
+            ready = float(arrivals[op.members].max())
+            start = max(gpu_free, ready)
+        else:
+            ready = gpu_free
+            start = gpu_free
+        end = start + op.duration
+        gpu_free = end
+        if op.kind in ("seg1", "whole"):
+            for m in op.members:
+                prod[int(m)] = (ready, start, end)
+            for m in op.completes:
+                stage1_done.add(int(m))
+        elif op.kind == "seg2":
+            for m in op.completes:
+                seg2ref[int(m)] = (start, end)
+
+    for i in range(n):
+        if i not in prod:
+            continue
+        R, S, E = prod[i]
+        if i in seg2ref:                       # completes at seg2
+            S2, E2 = seg2ref[i]
+            comp["seg2_queue_wait"][i] = S2 - E
+            comp["seg2_compute"][i] = E2 - S2
+            completed[i] = True
+        elif i in stage1_done:                 # exit / whole-model completion
+            completed[i] = True
+        else:                                  # produced but dropped (leftover queue)
+            continue
+        comp["formation_wait"][i] = R - float(arrivals[i])
+        comp["gpu_wait"][i] = S - R
+        comp["stage1_compute"][i] = E - S
+    return {**comp, "completed": completed}
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration: build all schedules with a single GPU pass
 # --------------------------------------------------------------------------- #

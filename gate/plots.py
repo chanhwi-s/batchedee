@@ -162,8 +162,87 @@ def plot_load_latency(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot4_load_latency")
 
 
+from .runtimes import BREAKDOWN_KEYS, simulate_breakdown  # noqa: E402
+
+_BD_LABELS = {
+    "formation_wait":  "batch-formation wait",
+    "gpu_wait":        "GPU-queue wait",
+    "stage1_compute":  "stage-1 compute (seg1 / whole)",
+    "seg2_queue_wait": "seg2 queue wait",
+    "seg2_compute":    "seg2 compute",
+}
+_BD_COLORS = {
+    "formation_wait":  "#4C72B0",   # blue  — arrivals too slow
+    "gpu_wait":        "#C44E52",   # red   — GPU-bound
+    "stage1_compute":  "#8C8C8C",   # grey
+    "seg2_queue_wait": "#DD8452",   # orange
+    "seg2_compute":    "#CCB974",   # tan
+}
+
+
+def _breakdown_curves(sched, lams, common, seed):
+    """Return {component: mean-ms array over lams} for the common set."""
+    n = sched.n_requests
+    curves = {k: np.empty(len(lams)) for k in BREAKDOWN_KEYS}
+    for j, lam in enumerate(lams):
+        arr = poisson_arrivals(n, lam, seed)
+        bd = simulate_breakdown(sched, arr)
+        for k in BREAKDOWN_KEYS:
+            curves[k][j] = bd[k][common].mean() * 1000.0   # ms
+    return curves
+
+
+def _stack_panel(ax, lams, curves, title):
+    ys = [curves[k] for k in BREAKDOWN_KEYS]
+    ax.stackplot(lams, *ys,
+                 labels=[_BD_LABELS[k] for k in BREAKDOWN_KEYS],
+                 colors=[_BD_COLORS[k] for k in BREAKDOWN_KEYS])
+    ax.set_title(title)
+    ax.set_xlabel("Arrival rate λ (req/s)")
+    ax.grid(True, alpha=0.25)
+
+
+def plot_latency_breakdown(cfg: Config, schedules: dict):
+    """Plot 5/6: per-sample latency decomposed into wait/compute components vs λ.
+
+    Reveals whether latency is batch-formation-dominated (blue) or GPU-bound
+    (red), and how the seg2 queue wait (orange) grows with seg2_batch.
+    """
+    lams = lambda_grid(cfg)
+    seed = int(cfg.arrivals.seed)
+    prop = schedules["proposed"]
+    B0 = int(cfg.batching.seg2_batch)
+    common = metrics.common_completed([schedules["plain"], schedules["naive"], *prop.values()])
+
+    # --- Figure 5: plain / naive / proposed(default B) ---
+    panels = [("plain", schedules["plain"]),
+              ("naive", schedules["naive"]),
+              (f"proposed (seg2={B0})", prop[B0])]
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharey=True)
+    for ax, (name, sched) in zip(axes, panels):
+        _stack_panel(ax, lams, _breakdown_curves(sched, lams, common, seed), name)
+    axes[0].set_ylabel("Mean latency (ms)")
+    axes[-1].legend(fontsize=7, loc="upper left")
+    fig.suptitle(f"Latency decomposition vs load  (N_common={len(common)})")
+    _save(fig, cfg, "plot5_latency_breakdown")
+
+    # --- Figure 6: proposed across the seg2_batch sweep ---
+    Bs = sorted(prop.keys())
+    ncol = len(Bs)
+    fig, axes = plt.subplots(1, ncol, figsize=(3.6 * ncol, 4.5), sharey=True)
+    if ncol == 1:
+        axes = [axes]
+    for ax, B in zip(axes, Bs):
+        _stack_panel(ax, lams, _breakdown_curves(prop[B], lams, common, seed), f"proposed seg2={B}")
+    axes[0].set_ylabel("Mean latency (ms)")
+    axes[-1].legend(fontsize=7, loc="upper left")
+    fig.suptitle(f"proposed: latency decomposition vs load, per seg2_batch  (N_common={len(common)})")
+    _save(fig, cfg, "plot6_breakdown_seg2sweep")
+
+
 def plot_all(cfg: Config, schedules: dict):
     plot_slo_goodput(cfg, schedules)
     plot_latency_kde(cfg, schedules)
     plot_latency_cdf(cfg, schedules)
     plot_load_latency(cfg, schedules)
+    plot_latency_breakdown(cfg, schedules)
