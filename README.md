@@ -68,6 +68,10 @@ Outputs:
   2. `plot2_latency_kde` — KDE of per-sample latency per runtime.
   3. `plot3_latency_cdf` — empirical CDF of per-sample latency per runtime.
   4. `plot4_load_latency` — response time (mean **and** p99) vs λ per runtime.
+  5. `plot7_timeline` — GPU execution timeline per runtime on the simulation
+     clock: one contiguous bar colored by state (arrival wait / seg1 or whole /
+     seg2). `plots.timeline_xlim_ms` clips the x-axis for zooming; works in both
+     seg2 flush modes.
 
 ## Methodology notes
 
@@ -83,9 +87,12 @@ Outputs:
 - **Single-stream GPU:** ops execute serially in dispatch order; a seg1/whole op
   waits for the last of its members to arrive, seg2 ops start as soon as the GPU
   frees (inputs already produced).
-- **Batch formation:** seg1 waits indefinitely until `seg1_batch` fills; the
-  `proposed` seg2 queue flushes exactly `seg2_batch`. Never-filled leftovers are
-  dropped.
+- **Batch formation:** seg1 waits indefinitely until `seg1_batch` fills. The
+  `proposed` seg2 queue has two flush modes (`batching.seg2_flush_mode`):
+  `"fixed"` (default) flushes exactly `seg2_batch` through the static seg2 graph
+  once the queue reaches `seg2_batch`; `"all"` flushes the **entire queue**
+  through the dynamic seg2 graph (like naive, timed per flush since the size
+  varies). In both modes, never-filled leftovers are dropped.
 - **Fair comparison:** every metric is restricted to the **intersection of request
   IDs completed by all compared runtimes**; goodput's wall-clock window is also
   measured on that common set.

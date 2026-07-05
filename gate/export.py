@@ -105,16 +105,28 @@ def export_all(cfg: Config, which: tuple[str, ...] = ("plain", "naive", "propose
             input_names=["image"], output_names=["hidden", "lph_logits"], force=force,
         )
 
-        # proposed: one static seg2 per flush size
+        # proposed:
+        #   flush_mode 'fixed' -> one static seg2 per flush size
+        #   flush_mode 'all'   -> whole-queue flushes vary in size: dynamic seg2
         if "proposed" in which:
-            seg2 = Seg2(ee, exit_after=exit_after)
-            written["seg2_static"] = {}
-            for b in _seg2_sizes(cfg):
-                dummy_h = torch.randn(b, 197, hidden)
-                written["seg2_static"][b] = _export(
-                    seg2, (dummy_h,), seg2_static_path(cfg, b),
-                    input_names=["hidden"], output_names=["logits"], force=force,
+            flush_mode = str(cfg.batching.get("seg2_flush_mode", "fixed")).lower()
+            if flush_mode == "all":
+                seg2 = Seg2(ee, exit_after=exit_after)
+                dummy_h = torch.randn(S, 197, hidden)  # any batch; axis 0 is dynamic
+                written["seg2_dynamic"] = _export(
+                    seg2, (dummy_h,), seg2_dynamic_path(cfg),
+                    input_names=["hidden"], output_names=["logits"],
+                    dynamic_axes={"hidden": {0: "n"}, "logits": {0: "n"}}, force=force,
                 )
+            else:
+                seg2 = Seg2(ee, exit_after=exit_after)
+                written["seg2_static"] = {}
+                for b in _seg2_sizes(cfg):
+                    dummy_h = torch.randn(b, 197, hidden)
+                    written["seg2_static"][b] = _export(
+                        seg2, (dummy_h,), seg2_static_path(cfg, b),
+                        input_names=["hidden"], output_names=["logits"], force=force,
+                    )
 
         # naive: dynamic-batch seg2
         if "naive" in which:

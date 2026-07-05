@@ -52,6 +52,8 @@ class Schedule:
     n_requests: int
     seg2_batch: int | None = None
     dropped: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
+    flush_mode: str = "fixed"       # 'fixed' (flush exactly seg2_batch, static graph)
+                                    # | 'all' (flush whole queue once >= seg2_batch, dynamic graph)
 
     def completed_ids(self) -> np.ndarray:
         ids = [op.completes for op in self.ops if len(op.completes)]
@@ -160,21 +162,40 @@ def build_naive(cfg: Config, images: np.ndarray, seg1_pass: list[BatchResult]) -
 
 def build_proposed(cfg: Config, images: np.ndarray, seg1_pass: list[BatchResult],
                    seg2_batch: int) -> Schedule:
+    """Two flush modes (batching.seg2_flush_mode):
+      'fixed' : queue >= B -> flush exactly B through the static seg2(B) graph
+                (repeatedly, while the queue still holds >= B).
+      'all'   : queue >= B -> flush the ENTIRE queue through the dynamic seg2
+                graph (variable size, timed per flush like naive).
+    """
     B = int(seg2_batch)
     hidden_dim = int(cfg.model.hidden_dim)
-    seg2 = TimedSession(export.seg2_static_path(cfg, B), cfg)
-    cache_static = bool(cfg.runtime.get("cache_static_service_times", True))
+    mode = str(cfg.batching.get("seg2_flush_mode", "fixed")).lower()
+    if mode not in ("fixed", "all"):
+        raise ValueError(f"batching.seg2_flush_mode must be 'fixed' or 'all', got {mode!r}")
 
-    # measure static seg2(B) once (warmup + timed); reuse if caching.
-    probe = {seg2.input_names[0]: np.random.randn(B, 197, hidden_dim).astype(np.float32)}
-    seg2.warmup(probe)
-    _, seg2_dur_cached = seg2.run_timed(probe)
+    if mode == "fixed":
+        seg2 = TimedSession(export.seg2_static_path(cfg, B), cfg)
+        cache_static = bool(cfg.runtime.get("cache_static_service_times", True))
+        # measure static seg2(B) once (warmup + timed); reuse if caching.
+        probe = {seg2.input_names[0]: np.random.randn(B, 197, hidden_dim).astype(np.float32)}
+        seg2.warmup(probe)
+        _, seg2_dur_cached = seg2.run_timed(probe)
 
-    def seg2_time() -> float:
-        if cache_static:
-            return seg2_dur_cached
-        _, d = seg2.run_timed({seg2.input_names[0]: np.random.randn(B, 197, hidden_dim).astype(np.float32)})
-        return d
+        def seg2_time(k: int) -> float:
+            if cache_static:
+                return seg2_dur_cached
+            _, d = seg2.run_timed({seg2.input_names[0]: np.random.randn(B, 197, hidden_dim).astype(np.float32)})
+            return d
+    else:
+        # dynamic graph (shared with naive); flush size varies -> time EVERY flush.
+        seg2 = TimedSession(export.seg2_dynamic_path(cfg), cfg)
+        S = int(cfg.batching.seg1_batch)
+        seg2.warmup({seg2.input_names[0]: np.random.randn(S, 197, hidden_dim).astype(np.float32)})
+
+        def seg2_time(k: int) -> float:
+            _, d = seg2.run_timed({seg2.input_names[0]: np.random.randn(k, 197, hidden_dim).astype(np.float32)})
+            return d
 
     ops: list[Op] = []
     n = images.shape[0]
@@ -183,13 +204,14 @@ def build_proposed(cfg: Config, images: np.ndarray, seg1_pass: list[BatchResult]
         ops.append(Op("seg1", br.batch_ids, br.exit_ids, br.seg1_dur, gate_on_arrival=True))
         queue.extend(br.nonexit_ids.tolist())
         while len(queue) >= B:
-            flush = np.array(queue[:B], dtype=np.int64)
-            del queue[:B]
-            ops.append(Op("seg2", flush, flush, seg2_time(), gate_on_arrival=False))
+            take = len(queue) if mode == "all" else B
+            flush = np.array(queue[:take], dtype=np.int64)
+            del queue[:take]
+            ops.append(Op("seg2", flush, flush, seg2_time(len(flush)), gate_on_arrival=False))
     dropped_queue = np.array(queue, dtype=np.int64)          # leftover seg2 queue dropped
     done = np.concatenate([op.completes for op in ops if len(op.completes)]) if ops else np.array([], np.int64)
     dropped = np.setdiff1d(np.arange(n), done)
-    return Schedule("proposed", ops, n, seg2_batch=B, dropped=dropped)
+    return Schedule("proposed", ops, n, seg2_batch=B, dropped=dropped, flush_mode=mode)
 
 
 # --------------------------------------------------------------------------- #

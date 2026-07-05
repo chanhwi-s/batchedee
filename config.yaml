@@ -31,6 +31,11 @@ batching:
   seg1_batch: 1                                 # seg1 accumulation batch (all runtimes)
   seg2_batch: 16                                 # proposed seg2 flush size (single-run default)
   seg2_batch_sweep: [1, 2, 4, 8, 16, 32]            # plot 1: one curve per seg2 batch size
+  # proposed seg2 flush mode:
+  #   "fixed": queue >= seg2_batch -> flush exactly seg2_batch (static ONNX graph)
+  #   "all"  : queue >= seg2_batch -> flush the ENTIRE queue (dynamic ONNX graph,
+  #            like naive; seg2 timed per flush since size varies)
+  seg2_flush_mode: "fixed"
 
 arrivals:
   lambda: 500.0                                  # single Poisson rate (requests/sec) for KDE/CDF
@@ -75,3 +80,5 @@ paths:
 plots:
   dpi: 150
   format: "png"
+  # Timeline plot (plot7): clip the x-axis to the first N ms (null = full run).
+  timeline_xlim_ms: null

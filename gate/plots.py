@@ -44,6 +44,13 @@ def _kde(data: np.ndarray, grid: np.ndarray) -> np.ndarray:
         return k.sum(axis=1) / (n * bw)
 
 
+def _prop_label(sched, B: int) -> str:
+    """Human label for a proposed schedule, aware of the seg2 flush mode."""
+    if getattr(sched, "flush_mode", "fixed") == "all":
+        return f"proposed (flush-all, thr={B})"
+    return f"proposed (seg2={B})"
+
+
 # --------------------------------------------------------------------------- #
 def plot_slo_goodput(cfg: Config, schedules: dict):
     """Plot 1: SLO vs Goodput, one curve per seg2_batch + plain + naive."""
@@ -65,7 +72,7 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
     cmap = plt.cm.viridis(np.linspace(0, 0.9, len(prop)))
     for c, (B, sched) in zip(cmap, sorted(prop.items())):
         ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode),
-                color=c, lw=1.8, label=f"proposed seg2={B}")
+                color=c, lw=1.8, label=_prop_label(sched, B))
 
     ylabel = ("Goodput  (1/N · Σ 1/latency, samples/s)" if mode == "mean_throughput"
               else "Goodput (good samples / sec)")
@@ -84,7 +91,7 @@ def plot_latency_kde(cfg: Config, schedules: dict):
     arr = poisson_arrivals(n, lam, int(cfg.arrivals.seed))
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
-    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], f"proposed(seg2={B})": prop}
+    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
     common = metrics.common_completed(list(scheds.values()))
 
     lats = {name: metrics.latency_ms(s, arr, common) for name, s in scheds.items()}
@@ -112,7 +119,7 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
     arr = poisson_arrivals(n, lam, int(cfg.arrivals.seed))
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
-    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], f"proposed(seg2={B})": prop}
+    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
     common = metrics.common_completed(list(scheds.values()))
 
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -134,7 +141,7 @@ def plot_load_latency(cfg: Config, schedules: dict):
     n = schedules["plain"].n_requests
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
-    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], f"proposed(seg2={B})": prop}
+    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
     common = metrics.common_completed(list(scheds.values()))
     lams = lambda_grid(cfg)
     base_seed = int(cfg.arrivals.seed)
@@ -217,7 +224,7 @@ def plot_latency_breakdown(cfg: Config, schedules: dict):
     # --- Figure 5: plain / naive / proposed(default B) ---
     panels = [("plain", schedules["plain"]),
               ("naive", schedules["naive"]),
-              (f"proposed (seg2={B0})", prop[B0])]
+              (_prop_label(prop[B0], B0), prop[B0])]
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharey=True)
     for ax, (name, sched) in zip(axes, panels):
         _stack_panel(ax, lams, _breakdown_curves(sched, lams, common, seed), name)
@@ -233,11 +240,92 @@ def plot_latency_breakdown(cfg: Config, schedules: dict):
     if ncol == 1:
         axes = [axes]
     for ax, B in zip(axes, Bs):
-        _stack_panel(ax, lams, _breakdown_curves(prop[B], lams, common, seed), f"proposed seg2={B}")
+        _stack_panel(ax, lams, _breakdown_curves(prop[B], lams, common, seed), _prop_label(prop[B], B))
     axes[0].set_ylabel("Mean latency (ms)")
     axes[-1].legend(fontsize=7, loc="upper left")
     fig.suptitle(f"proposed: latency decomposition vs load, per seg2_batch  (N_common={len(common)})")
     _save(fig, cfg, "plot6_breakdown_seg2sweep")
+
+
+# --------------------------------------------------------------------------- #
+# Plot 7: GPU-stream timeline (arrival wait / seg1 / seg2 as one contiguous bar)
+# --------------------------------------------------------------------------- #
+_TL_COLORS = {  # same hues as the breakdown plots: blue=wait, grey=stage-1, orange=seg2
+    "wait": "#4C72B0",
+    "seg1": "#8C8C8C",
+    "seg2": "#DD8452",
+}
+_TL_LABELS = {
+    "wait": "arrival wait (GPU idle)",
+    "seg1": "seg1 / whole-model inference",
+    "seg2": "seg2 inference",
+}
+
+
+def _op_intervals(sched, arrivals: np.ndarray):
+    """Replay the single-stream simulation and return [(start_s, end_s, kind)].
+
+    kind ∈ {'wait', 'seg1', 'seg2'}; 'whole' (plain) maps to 'seg1'. Gaps where
+    the GPU idles waiting for a batch to fill become 'wait' segments, so the
+    concatenation is one contiguous bar from t=0 to the last completion.
+    """
+    segs = []
+    gpu_free = 0.0
+    for op in sched.ops:
+        if op.gate_on_arrival and len(op.members):
+            start = max(gpu_free, float(arrivals[op.members].max()))
+        else:
+            start = gpu_free
+        if start > gpu_free:
+            segs.append((gpu_free, start, "wait"))
+        kind = "seg1" if op.kind in ("seg1", "whole") else "seg2"
+        segs.append((start, start + op.duration, kind))
+        gpu_free = start + op.duration
+    return segs
+
+
+def plot_timeline(cfg: Config, schedules: dict):
+    """Plot 7: execution timeline per runtime on the simulation clock.
+
+    One horizontal bar per runtime; x = simulation time. Colors mark whether the
+    GPU was idle (waiting for arrivals / batch formation), running seg1 (or the
+    whole model for plain), or running seg2. Works for both seg2 flush modes.
+    """
+    from matplotlib.patches import Patch
+
+    lam = float(cfg.arrivals["lambda"])
+    n = schedules["plain"].n_requests
+    arr = poisson_arrivals(n, lam, int(cfg.arrivals.seed))
+    B = int(cfg.batching.seg2_batch)
+    prop = schedules["proposed"][B]
+    rows = [("plain", schedules["plain"]),
+            ("naive", schedules["naive"]),
+            (_prop_label(prop, B), prop)]
+
+    fig, ax = plt.subplots(figsize=(13, 3.8))
+    height = 0.6
+    for y, (name, s) in enumerate(rows):
+        per_kind: dict[str, list] = {}
+        for a, b, kind in _op_intervals(s, arr):
+            per_kind.setdefault(kind, []).append((a * 1000.0, (b - a) * 1000.0))
+        for kind, xranges in per_kind.items():
+            ax.broken_barh(xranges, (y - height / 2, height),
+                           facecolors=_TL_COLORS[kind], linewidth=0)
+    ax.set_yticks(range(len(rows)))
+    ax.set_yticklabels([name for name, _ in rows])
+    ax.invert_yaxis()
+    ax.set_xlabel("Simulation time (ms)")
+    xlim = cfg.plots.get("timeline_xlim_ms", None)
+    if xlim:
+        ax.set_xlim(0, float(xlim))
+    else:
+        ax.set_xlim(left=0)
+    ax.set_title(f"GPU execution timeline  (λ={lam:g} req/s)")
+    ax.grid(True, axis="x", alpha=0.25)
+    ax.legend(handles=[Patch(facecolor=_TL_COLORS[k], label=_TL_LABELS[k])
+                       for k in ("wait", "seg1", "seg2")],
+              fontsize=8, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.18))
+    return _save(fig, cfg, "plot7_timeline")
 
 
 def plot_all(cfg: Config, schedules: dict):
@@ -246,3 +334,4 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_cdf(cfg, schedules)
     plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
+    plot_timeline(cfg, schedules)
