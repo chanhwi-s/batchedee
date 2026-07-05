@@ -7,7 +7,7 @@
 data:
   # Path to ImageNet val on the server (ImageFolder layout: val/<class>/*.JPEG)
   imagenet_val_dir: "/home2/imagenet/val"      # (FILL IN if different)
-  num_requests: 5000                            # N requests drawn from val
+  num_requests: 16384                            # N requests drawn from val
   image_size: 224
   # timm standard preprocessing (vit_base_patch16_224): resize 256 -> center-crop 224
   resize: 256
@@ -48,18 +48,18 @@ arrivals:
   #     naive: 1650
   #     proposed: 1700
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
-  lambda: 0
+  lambda: 1400
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
-    start: 100.0
-    stop: 2000.0
-    step: 100.0
+    start: 1200.0
+    stop: 1800.0
+    step: 5.0
   seed: 1234                                     # fixes arrival trace + request sampling
 
 slo:
   # Latency SLO sweep for goodput plot (milliseconds)
   start_ms: 0
-  stop_ms: 200
+  stop_ms: 100
   step_ms: 10
 
 metrics:
