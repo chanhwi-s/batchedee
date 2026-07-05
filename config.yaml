@@ -57,6 +57,12 @@ metrics:
   #   "wallclock"       : (# good samples) / (wall-clock span)          [spec §6, default]
   #   "mean_throughput" : (1/N) * sum over good samples of (1/latency)
   goodput_mode: "wallclock"
+  # Arrival model for the goodput plot (plot1):
+  #   "instant" : all requests queued at t=0 (saturated backlog) -> goodput
+  #               measures pure drain capability, no batch-formation wait
+  #   "poisson" : requests arrive by the Poisson trace (arrivals.lambda)
+  # plot4 (load vs latency) ALWAYS uses the Poisson lambda sweep.
+  goodput_arrivals: "instant"
 
 runtime:
   warmup_iters: 20                               # CUDA warmup runs per graph (excluded from timing)

@@ -51,12 +51,29 @@ def _prop_label(sched, B: int) -> str:
     return f"proposed (seg2={B})"
 
 
+def _goodput_arrivals(cfg: Config, n: int):
+    """Arrival vector for the goodput plot (metrics.goodput_arrivals).
+
+    'poisson' : the shared Poisson trace (arrivals.lambda) — latency includes
+                batch-formation wait, so goodput is arrival-limited at low λ.
+    'instant' : all n requests queued at t=0 (saturated backlog) — goodput
+                measures pure drain capability; only plot4 keeps Poisson load.
+    Returns (arrivals_seconds, description-for-title).
+    """
+    mode = str(cfg.get_path("metrics.goodput_arrivals", "poisson")).lower()
+    if mode == "instant":
+        return np.zeros(n, dtype=float), "saturated: all arrivals at t=0"
+    if mode == "poisson":
+        lam = float(cfg.arrivals["lambda"])
+        return poisson_arrivals(n, lam, int(cfg.arrivals.seed)), f"λ={lam:g} req/s"
+    raise ValueError(f"metrics.goodput_arrivals must be 'poisson' or 'instant', got {mode!r}")
+
+
 # --------------------------------------------------------------------------- #
 def plot_slo_goodput(cfg: Config, schedules: dict):
     """Plot 1: SLO vs Goodput, one curve per seg2_batch + plain + naive."""
-    lam = float(cfg.arrivals["lambda"])
     n = schedules["plain"].n_requests
-    arr = poisson_arrivals(n, lam, int(cfg.arrivals.seed))
+    arr, arr_desc = _goodput_arrivals(cfg, n)
     slo = slo_grid_ms(cfg)
 
     prop = schedules["proposed"]  # {B: Schedule}
@@ -78,7 +95,7 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
               else "Goodput (good samples / sec)")
     ax.set_xlabel("Latency SLO (ms)")
     ax.set_ylabel(ylabel)
-    ax.set_title(f"SLO vs Goodput  (λ={lam:g} req/s, N_common={len(common)})")
+    ax.set_title(f"SLO vs Goodput  ({arr_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
     return _save(fig, cfg, "plot1_slo_goodput")
