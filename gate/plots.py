@@ -51,29 +51,50 @@ def _prop_label(sched, B: int) -> str:
     return f"proposed (seg2={B})"
 
 
-def _single_arrivals(cfg: Config, n: int):
+def _runtime_lambda(cfg: Config, runtime: str) -> float:
+    """arrivals.lambda: scalar (shared by all runtimes) or a per-runtime
+    mapping {plain: rate, naive: rate, proposed: rate} — e.g. each runtime's
+    sustainable upper bound read off the load-vs-latency plot."""
+    lam = cfg.arrivals["lambda"]
+    if isinstance(lam, dict):
+        if runtime not in lam:
+            raise ValueError(f"arrivals.lambda mapping needs key {runtime!r} "
+                             f"(has {sorted(lam)})")
+        return float(lam[runtime])
+    return float(lam)
+
+
+def _single_arrivals(cfg: Config, n: int, runtime: str):
     """Arrival vector for every single-λ plot (all figures except the λ sweeps).
 
-    arrivals.lambda == 0 -> NO Poisson modeling: all n requests are queued at
-    t=0 (saturated backlog) and the runtimes just drain them back-to-back.
-    Latency is then measured from each sample's seg1 input (service latency),
-    not from t=0 — waiting behind the backlog is a setup artifact.
-    arrivals.lambda > 0  -> the shared Poisson trace; latency = response time.
+    lambda == 0 -> NO Poisson modeling: all n requests are queued at t=0
+    (saturated backlog); latency is measured from each sample's seg1 input
+    (service latency) since waiting behind the backlog is a setup artifact.
+    lambda > 0  -> Poisson trace at that rate; latency = response time.
     The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep.
     Returns (arrivals_seconds, description-for-title, latency_origin).
     """
-    lam = float(cfg.arrivals["lambda"])
+    lam = _runtime_lambda(cfg, runtime)
     if lam <= 0:
         return (np.zeros(n, dtype=float),
                 "saturated; latency from seg1 input", "stage1_start")
     return poisson_arrivals(n, lam, int(cfg.arrivals.seed)), f"λ={lam:g} req/s", "arrival"
 
 
+def _arrivals_per_runtime(cfg: Config, n: int):
+    """(arr, desc, origin) per runtime + shared-λ flag + title description."""
+    per = {r: _single_arrivals(cfg, n, r) for r in ("plain", "naive", "proposed")}
+    descs = {d for _, d, _ in per.values()}
+    shared = len(descs) == 1
+    title_desc = next(iter(descs)) if shared else "per-runtime arrivals"
+    return per, shared, title_desc
+
+
 # --------------------------------------------------------------------------- #
 def plot_slo_goodput(cfg: Config, schedules: dict):
     """Plot 1: SLO vs Goodput, one curve per seg2_batch + plain + naive."""
     n = schedules["plain"].n_requests
-    arr, arr_desc, origin = _single_arrivals(cfg, n)
+    per, shared, title_desc = _arrivals_per_runtime(cfg, n)
     slo = slo_grid_ms(cfg)
 
     prop = schedules["proposed"]  # {B: Schedule}
@@ -81,49 +102,68 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
     common = metrics.common_completed(all_scheds)
     mode = cfg.get_path("metrics.goodput_mode", "mean_throughput")
 
+    def lbl(base, r):
+        return base if shared else f"{base}  [{per[r][1]}]"
+
     fig, ax = plt.subplots(figsize=(8, 5.5))
+    arr, _, origin = per["plain"]
     ax.plot(slo, metrics.goodput_vs_slo(schedules["plain"], arr, common, slo, mode, origin),
-            "k--", lw=2, label="plain")
+            "k--", lw=2, label=lbl("plain", "plain"))
+    arr, _, origin = per["naive"]
     ax.plot(slo, metrics.goodput_vs_slo(schedules["naive"], arr, common, slo, mode, origin),
-            color="0.45", ls=":", lw=2, label="naive")
+            color="0.45", ls=":", lw=2, label=lbl("naive", "naive"))
+    arr, _, origin = per["proposed"]
     cmap = plt.cm.viridis(np.linspace(0, 0.9, len(prop)))
     for c, (B, sched) in zip(cmap, sorted(prop.items())):
         ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode, origin),
-                color=c, lw=1.8, label=_prop_label(sched, B))
+                color=c, lw=1.8, label=lbl(_prop_label(sched, B), "proposed"))
 
     ylabel = ("Goodput  (1/N · Σ 1/latency, samples/s)" if mode == "mean_throughput"
               else "Goodput (good samples / sec)")
     ax.set_xlabel("Latency SLO (ms)")
     ax.set_ylabel(ylabel)
-    ax.set_title(f"SLO vs Goodput  ({arr_desc}, N_common={len(common)})")
+    ax.set_title(f"SLO vs Goodput  ({title_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, ncol=2)
     return _save(fig, cfg, "plot1_slo_goodput")
 
 
-def plot_latency_kde(cfg: Config, schedules: dict):
-    """Plot 2: KDE of per-sample latency per runtime."""
+def _per_runtime_latencies(cfg: Config, schedules: dict):
+    """Shared prep for the KDE/CDF plots: per-runtime latencies (each runtime
+    replayed against its own arrival trace) + labels/axis/title strings."""
     n = schedules["plain"].n_requests
-    arr, arr_desc, origin = _single_arrivals(cfg, n)
+    per, shared, title_desc = _arrivals_per_runtime(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
-    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
-    common = metrics.common_completed(list(scheds.values()))
+    entries = [("plain", "plain", schedules["plain"], "k"),
+               ("naive", "naive", schedules["naive"], "0.45"),
+               (_prop_label(prop, B), "proposed", prop, "C0")]
+    common = metrics.common_completed([e[2] for e in entries])
 
-    lats = {name: metrics.latency_ms(s, arr, common, origin) for name, s in scheds.items()}
-    lo = min(l.min() for l in lats.values())
-    hi = max(np.percentile(l, 99.5) for l in lats.values())
+    data = []          # (label, latency_ms array, color)
+    for name, r, s, color in entries:
+        arr, d, origin = per[r]
+        label = name if shared else f"{name}  [{d}]"
+        data.append((label, metrics.latency_ms(s, arr, common, origin), color))
+    origins = {o for _, _, o in per.values()}
+    xlabel = ("Per-sample service latency (ms, from seg1 input)"
+              if origins == {"stage1_start"} else "Per-sample latency (ms)")
+    return data, xlabel, title_desc, common
+
+
+def plot_latency_kde(cfg: Config, schedules: dict):
+    """Plot 2: KDE of per-sample latency per runtime."""
+    data, xlabel, title_desc, common = _per_runtime_latencies(cfg, schedules)
+    lo = min(l.min() for _, l, _ in data)
+    hi = max(np.percentile(l, 99.5) for _, l, _ in data)
     grid = np.linspace(lo, hi, 400)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    colors = {"plain": "k", "naive": "0.45"}
-    for name, l in lats.items():
-        ax.plot(grid, _kde(l, grid), lw=2, label=name,
-                color=colors.get(name, "C0"))
-    ax.set_xlabel("Per-sample service latency (ms, from seg1 input)"
-                  if origin == "stage1_start" else "Per-sample latency (ms)")
+    for label, l, color in data:
+        ax.plot(grid, _kde(l, grid), lw=2, label=label, color=color)
+    ax.set_xlabel(xlabel)
     ax.set_ylabel("Density")
-    ax.set_title(f"Latency distribution (KDE)  ({arr_desc}, N_common={len(common)})")
+    ax.set_title(f"Latency distribution (KDE)  ({title_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend()
     return _save(fig, cfg, "plot2_latency_kde")
@@ -131,23 +171,16 @@ def plot_latency_kde(cfg: Config, schedules: dict):
 
 def plot_latency_cdf(cfg: Config, schedules: dict):
     """Plot 3: empirical CDF of per-sample latency per runtime."""
-    n = schedules["plain"].n_requests
-    arr, arr_desc, origin = _single_arrivals(cfg, n)
-    B = int(cfg.batching.seg2_batch)
-    prop = schedules["proposed"][B]
-    scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
-    common = metrics.common_completed(list(scheds.values()))
+    data, xlabel, title_desc, common = _per_runtime_latencies(cfg, schedules)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    colors = {"plain": "k", "naive": "0.45"}
-    for name, s in scheds.items():
-        l = np.sort(metrics.latency_ms(s, arr, common, origin))
+    for label, l, color in data:
+        l = np.sort(l)
         y = np.arange(1, len(l) + 1) / len(l)
-        ax.plot(l, y, lw=2, label=name, color=colors.get(name, "C0"))
-    ax.set_xlabel("Per-sample service latency (ms, from seg1 input)"
-                  if origin == "stage1_start" else "Per-sample latency (ms)")
+        ax.plot(l, y, lw=2, label=label, color=color)
+    ax.set_xlabel(xlabel)
     ax.set_ylabel("CDF")
-    ax.set_title(f"Latency CDF  ({arr_desc}, N_common={len(common)})")
+    ax.set_title(f"Latency CDF  ({title_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend()
     return _save(fig, cfg, "plot3_latency_cdf")
@@ -311,16 +344,19 @@ def plot_timeline(cfg: Config, schedules: dict):
     from matplotlib.patches import Patch
 
     n = schedules["plain"].n_requests
-    arr, arr_desc, _origin = _single_arrivals(cfg, n)
+    per, shared, title_desc = _arrivals_per_runtime(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
-    rows = [("plain", schedules["plain"]),
-            ("naive", schedules["naive"]),
-            (_prop_label(prop, B), prop)]
+    rows = [("plain", "plain", schedules["plain"]),
+            ("naive", "naive", schedules["naive"]),
+            (_prop_label(prop, B), "proposed", prop)]
 
     fig, ax = plt.subplots(figsize=(13, 3.8))
     height = 0.6
-    for y, (name, s) in enumerate(rows):
+    labels = []
+    for y, (name, r, s) in enumerate(rows):
+        arr, d, _o = per[r]
+        labels.append(name if shared else f"{name}\n[{d}]")
         per_kind: dict[str, list] = {}
         for a, b, kind in _op_intervals(s, arr):
             per_kind.setdefault(kind, []).append((a * 1000.0, (b - a) * 1000.0))
@@ -328,7 +364,7 @@ def plot_timeline(cfg: Config, schedules: dict):
             ax.broken_barh(xranges, (y - height / 2, height),
                            facecolors=_TL_COLORS[kind], linewidth=0)
     ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels([name for name, _ in rows])
+    ax.set_yticklabels(labels)
     ax.invert_yaxis()
     ax.set_xlabel("Simulation time (ms)")
     xlim = cfg.plots.get("timeline_xlim_ms", None)
@@ -336,7 +372,7 @@ def plot_timeline(cfg: Config, schedules: dict):
         ax.set_xlim(0, float(xlim))
     else:
         ax.set_xlim(left=0)
-    ax.set_title(f"GPU execution timeline  ({arr_desc})")
+    ax.set_title(f"GPU execution timeline  ({title_desc})")
     ax.grid(True, axis="x", alpha=0.25)
     ax.legend(handles=[Patch(facecolor=_TL_COLORS[k], label=_TL_LABELS[k])
                        for k in ("wait", "seg1", "seg2")],

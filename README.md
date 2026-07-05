@@ -68,8 +68,11 @@ Outputs:
 
   All single-λ figures (goodput, KDE, CDF, timeline) share `arrivals.lambda`:
   `0` disables Poisson modeling entirely (all requests queued at t=0, saturated
-  drain), `> 0` uses the Poisson trace at that rate. The λ-sweep figures (load
-  vs latency, breakdown) always use `arrivals.lambda_sweep`.
+  drain), `> 0` uses the Poisson trace at that rate. It can also be a
+  per-runtime mapping (`lambda: {plain: 1400, naive: 1650, proposed: 1700}`) to
+  benchmark each runtime at its own sustainable load (e.g. read off the
+  load-vs-latency plot); labels then show each runtime's λ. The λ-sweep figures
+  (load vs latency, breakdown) always use `arrivals.lambda_sweep`.
   2. `plot2_latency_kde` — KDE of per-sample latency per runtime.
   3. `plot3_latency_cdf` — empirical CDF of per-sample latency per runtime.
   4. `plot4_load_latency` — response time (mean **and** p99) vs λ per runtime.
