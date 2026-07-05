@@ -4,9 +4,10 @@
 Subcommands
 -----------
   export   Export + cache all ONNX graphs (plain / seg1 / seg2 static+dynamic).
-  run      Run the GPU execution pass, build schedules, save them to disk.
-  plot     Load saved schedules and render the four figures (png + pdf).
-  all      export -> run -> plot.
+  run      Run the GPU execution pass (+ accuracy pass), build schedules, save.
+  plot     Load saved schedules and render the figures (png + pdf).
+  e2e      Generate the end-to-end comparison tables (Table A/B, json + csv).
+  all      export -> run -> plot -> e2e.
 
 Usage
 -----
@@ -70,6 +71,15 @@ def cmd_run(cfg, args):
     for B, st in sorted(scheds["op_stats"]["proposed"].items()):
         print(f"[run] proposed(seg2={B}): {_fmt(st)}")
 
+    # accuracy pass: real (untimed) inference -> per-sample top-1 correctness
+    print("[run] accuracy pass (real inference, untimed) ...")
+    scheds["correct"] = runtimes.collect_correctness(cfg, images, labels)
+    done = scheds["plain"].completed_ids()
+    print(f"[run] top-1 accuracy over batched samples: "
+          f"plain={100 * scheds['correct']['plain'][done].mean():.2f}%  "
+          f"ee={100 * scheds['correct']['ee'][done].mean():.2f}%  "
+          f"(exit rate {100 * scheds['correct']['exit'][done].mean():.1f}%)")
+
     with open(_sched_path(cfg), "wb") as f:
         pickle.dump(scheds, f)
     print(f"[run] saved schedules -> {_sched_path(cfg)}")
@@ -90,15 +100,27 @@ def cmd_plot(cfg, args):
         print(f"[plot] divergence λ recorded in {p} (schedules['divergence'])")
 
 
+def cmd_e2e(cfg, args):
+    ensure_dirs(cfg)
+    p = _sched_path(cfg)
+    if not os.path.exists(p):
+        sys.exit(f"[e2e] no schedules at {p}; run `python run.py run` first.")
+    with open(p, "rb") as f:
+        scheds = pickle.load(f)
+    from gate import e2e_table
+    e2e_table.generate(cfg, scheds)
+
+
 def cmd_all(cfg, args):
     cmd_export(cfg, args)
     cmd_run(cfg, args)
     cmd_plot(cfg, args)
+    cmd_e2e(cfg, args)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["export", "run", "plot", "all"])
+    ap.add_argument("command", choices=["export", "run", "plot", "all", "e2e"])
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--force", action="store_true", help="re-export ONNX even if cached")
     ap.add_argument("--runtimes", nargs="+", default=["plain", "naive", "proposed"],
@@ -108,7 +130,8 @@ def main():
     cfg = load_config(args.config)
     cache = setup_hf_cache(cfg)          # writable HF/timm cache before timm import
     print(f"[env] HF cache -> {cache}")
-    {"export": cmd_export, "run": cmd_run, "plot": cmd_plot, "all": cmd_all}[args.command](cfg, args)
+    {"export": cmd_export, "run": cmd_run, "plot": cmd_plot,
+     "all": cmd_all, "e2e": cmd_e2e}[args.command](cfg, args)
 
 
 if __name__ == "__main__":

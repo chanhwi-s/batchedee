@@ -334,6 +334,49 @@ def simulate_breakdown(sched: Schedule, arrivals: np.ndarray) -> dict:
     return {**comp, "completed": completed}
 
 
+def collect_correctness(cfg: Config, images: np.ndarray, labels: np.ndarray) -> dict:
+    """Untimed real-inference pass: per-sample top-1 correctness (for accuracy).
+
+    plain : the timm whole-model graph on every full batch.
+    ee    : shared by naive and proposed (identical by construction) — LPH
+            argmax for exiting samples, seg2 (dynamic graph) on the REAL
+            hidden states for the rest.
+    Samples outside a full seg1 batch stay False; they are dropped by every
+    runtime and excluded by the common set anyway.
+    Returns {'plain': bool[N], 'ee': bool[N], 'exit': bool[N]}.
+    """
+    S = int(cfg.batching.seg1_batch)
+    thr = float(cfg.early_exit.confidence_threshold)
+    n = images.shape[0]
+    labels = np.asarray(labels)
+    out = {"plain": np.zeros(n, dtype=bool),
+           "ee": np.zeros(n, dtype=bool),
+           "exit": np.zeros(n, dtype=bool)}
+
+    plain = TimedSession(export.plain_path(cfg), cfg)
+    seg1 = TimedSession(export.seg1_path(cfg), cfg)
+    seg2 = TimedSession(export.seg2_dynamic_path(cfg), cfg)
+
+    for s, batch in iter_batches(images, S, drop_last=True):
+        ids = np.arange(s, s + S, dtype=np.int64)
+        feed = batch.astype(np.float32)
+        logits = plain.sess.run(plain.output_names, {plain.input_names[0]: feed})[0]
+        out["plain"][ids] = logits.argmax(axis=1) == labels[ids]
+
+        s1_outs = seg1.sess.run(seg1.output_names, {seg1.input_names[0]: feed})
+        lph = _pick_logits(seg1.output_names, s1_outs)
+        hidden = next(o for o in s1_outs if o.ndim == 3)
+        mask = _softmax_maxconf(lph) >= thr
+        preds = np.empty(S, dtype=np.int64)
+        preds[mask] = lph[mask].argmax(axis=1)
+        if (~mask).any():
+            l2 = seg2.sess.run(seg2.output_names, {seg2.input_names[0]: hidden[~mask]})[0]
+            preds[~mask] = l2.argmax(axis=1)
+        out["ee"][ids] = preds == labels[ids]
+        out["exit"][ids] = mask
+    return out
+
+
 def op_stats(sched: Schedule) -> dict:
     """Per-kind execution count and mean measured service time (ms).
 

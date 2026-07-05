@@ -52,8 +52,9 @@ Edit `config.yaml`:
 
 ```bash
 python run.py export      # export + cache all ONNX graphs
-python run.py run         # GPU pass: measure service times, build schedules
-python run.py plot        # render the four figures
+python run.py run         # GPU pass: measure service times + accuracy, build schedules
+python run.py plot        # render the figures
+python run.py e2e         # end-to-end comparison tables (Table A/B, json + csv)
 # or the whole pipeline:
 python run.py all
 ```
@@ -61,7 +62,14 @@ python run.py all
 Outputs:
 
 - ONNX graphs → `artifacts/onnx/`
-- Schedules (pickled) → `artifacts/results/schedules.pkl`
+- Schedules (pickled) → `artifacts/results/schedules.pkl` (ops + measured
+  service times, op stats, per-sample top-1 correctness for accuracy)
+- End-to-end tables → `artifacts/results/e2e_table.json`, `e2e_table_a.csv`,
+  `e2e_table_b.csv`. Table A: accuracy / saturated throughput (λ=0) /
+  divergence λ per runtime. Table B: mean & p99 response time and goodput at
+  two fixed SLOs, on three λ values derived deterministically from the sweep's
+  divergence points (derivation recorded in the JSON `meta` block; built-in
+  sanity checks print PASS/FAIL).
 - Figures (png + pdf) → `artifacts/plots/`
   1. `plot1_slo_goodput` — SLO 0–200 ms vs goodput; one curve per `seg2_batch` in
      `{2,4,8,16,32}`, plus `plain` and `naive`.
