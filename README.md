@@ -66,10 +66,11 @@ Outputs:
   service times, op stats, per-sample top-1 correctness for accuracy)
 - End-to-end tables → `artifacts/results/e2e_table.json`, `e2e_table_a.csv`,
   `e2e_table_b.csv`. Table A: accuracy / saturated throughput (λ=0) /
-  divergence λ per runtime. Table B: mean & p99 response time and goodput at
-  two fixed SLOs, on three λ values derived deterministically from the sweep's
-  divergence points (derivation recorded in the JSON `meta` block; built-in
-  sanity checks print PASS/FAIL).
+  divergence λ per runtime (capacity-based: divergence λ = the runtime's
+  service capacity, above which the queue grows without bound). Table B: mean
+  & p99 response time and goodput at two fixed SLOs, on three λ values derived
+  deterministically from the capacity points (derivation recorded in the JSON
+  `meta` block; built-in sanity checks print PASS/FAIL).
 - Figures (png + pdf) → `artifacts/plots/`
   1. `plot1_slo_goodput` — SLO 0–200 ms vs goodput; one curve per `seg2_batch` in
      `{2,4,8,16,32}`, plus `plain` and `naive`.

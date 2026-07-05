@@ -187,9 +187,10 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
 def plot_load_latency(cfg: Config, schedules: dict):
     """Plot 4: Load (lambda) vs response time (mean + p99) per runtime.
 
-    Also detects each runtime's divergence point — the λ at the minimum of the
-    response-time curve (falling before it: formation-wait dominated; rising
-    beyond it: queueing dominated) — prints it, and returns it as a dict.
+    Also reports each runtime's divergence point — its service capacity
+    (saturated throughput; arrival rates above it make the queue grow without
+    bound) — plus the knee (latency minimum) of the sweep curve for reference,
+    and returns the capacity-based divergence λ as a dict.
     """
     B = int(cfg.batching.seg2_batch)
     entries = [("plain", schedules["plain"]),
@@ -202,16 +203,11 @@ def plot_load_latency(cfg: Config, schedules: dict):
     means, p99s, divergence = {}, {}, {}
     for r, s in entries:
         means[r], p99s[r] = metrics.load_latency_curves(s, lams, common, base_seed)
-        dm = metrics.divergence_lambda(lams, means[r])
-        dp = metrics.divergence_lambda(lams, p99s[r])
-        divergence[r] = {"mean": dm, "p99": dp}
-
-        def _fmt(d):
-            if d is None:
-                return f"not reached within sweep (still falling at λ={lams[-1]:g})"
-            return (f"≤{lams[0]:g} (already rising at sweep start)" if d == lams[0]
-                    else f"{d:g}")
-        print(f"[plot4] {r}: divergence λ = {_fmt(dm)} (mean) | {_fmt(dp)} (p99)  [req/s]")
+        divergence[r] = metrics.capacity_lambda(s, common)
+        knee = metrics.knee_lambda(lams, means[r])
+        knee_s = "-" if knee is None else f"{knee:g}"
+        print(f"[plot4] {r}: divergence λ (capacity) = {divergence[r]:.1f} req/s"
+              f" | knee (latency minimum) λ = {knee_s}")
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     for r, _ in entries:

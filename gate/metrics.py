@@ -113,13 +113,26 @@ def load_latency_curves(sched: Schedule, lams: np.ndarray, common_ids: np.ndarra
     return means, p99s
 
 
-def divergence_lambda(lams: np.ndarray, curve: np.ndarray):
-    """λ at the response-time minimum — the knee of the load curve.
+def capacity_lambda(sched: Schedule, common_ids: np.ndarray) -> float:
+    """The runtime's service capacity (req/s) = saturated throughput.
 
-    Below it, latency falls with λ (batch-formation wait dominates); beyond it,
-    latency rises (queueing dominates) i.e. the runtime starts to diverge.
-    Returns None when the curve is still falling at the end of the sweep
-    (divergence not reached within the swept range).
+    Measured by draining the full backlog (all arrivals at t=0): completed
+    common-set samples / makespan. This is the TRUE divergence point: for
+    arrival rates above it the queue grows without bound and latency does not
+    converge; below it the system is stable.
+    """
+    zeros = np.zeros(sched.n_requests, dtype=float)
+    completion, _ = simulate(sched, zeros)
+    return len(common_ids) / float(completion[common_ids].max())
+
+
+def knee_lambda(lams: np.ndarray, curve: np.ndarray):
+    """λ at the response-time minimum — the knee (sweet spot) of the load curve.
+
+    NOT the divergence point: below it batch-formation wait dominates (latency
+    falls with λ), beyond it GPU-queue wait grows — but the system stays stable
+    until λ reaches capacity_lambda(). Returns None when the curve is still
+    falling at the end of the sweep.
     """
     i = int(np.argmin(curve))
     if i == len(curve) - 1:

@@ -94,7 +94,7 @@ def cmd_plot(cfg, args):
         scheds = pickle.load(f)
     divergence = plots_mod.plot_all(cfg, scheds)
     if divergence:
-        scheds["divergence"] = divergence          # λ at each runtime's latency minimum
+        scheds["divergence"] = divergence          # capacity-based divergence λ per runtime
         with open(p, "wb") as f:
             pickle.dump(scheds, f)
         print(f"[plot] divergence λ recorded in {p} (schedules['divergence'])")

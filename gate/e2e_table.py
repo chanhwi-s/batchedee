@@ -5,11 +5,14 @@ Everything is derived from the measured schedules + cheap event-driven replay
 stores the per-sample correctness arrays for accuracy).
 
 Table A (λ-independent, one row per runtime):
-  accuracy (%), saturated throughput (samples/s, λ=0 backlog drain),
-  divergence λ (mean- and p99-based knee of the load-vs-latency sweep).
+  accuracy (%), saturated throughput (samples/s, λ=0 backlog drain), and the
+  divergence λ. Divergence is CAPACITY-based: the service capacity (=saturated
+  throughput, req/s) above which the queue grows without bound and latency
+  diverges. The sweep-curve knee (latency minimum) is kept in meta as
+  reference only — it is the sweet spot, not the instability point.
 
 Table B (runtime × λ grid): the three λ values are derived deterministically
-from the sweep's mean-based divergence points D_plain/D_naive/D_proposed:
+from the capacity-based divergence points D_plain/D_naive/D_proposed:
   λ1 = D_plain − step, λ2 = grid-snapped midpoint(D_plain, D_naive),
   λ3 = D_proposed − step; collisions collapse to the distinct achievable
 subset (recorded in meta). The two SLOs are plain's mean / p99 response time
@@ -60,12 +63,13 @@ def generate(cfg: Config, scheds: dict) -> dict:
     notes: list[str] = []
     checks: list[dict] = []
 
-    # ---- divergence λ per runtime (mean + p99 knees of the load sweep) ----
-    div = {}
+    # ---- divergence λ per runtime = service capacity (saturated throughput);
+    #      the sweep-curve knee (latency minimum) is kept as reference only ----
+    div, knee = {}, {}
     for r, s in entries.items():
-        m, p = metrics.load_latency_curves(s, lams, common, seed)
-        div[r] = {"mean": metrics.divergence_lambda(lams, m),
-                  "p99": metrics.divergence_lambda(lams, p)}
+        div[r] = metrics.capacity_lambda(s, common)
+        m, _p = metrics.load_latency_curves(s, lams, common, seed)
+        knee[r] = metrics.knee_lambda(lams, m)
 
     # ---- Table A: accuracy ----
     corr = scheds.get("correct")
@@ -77,29 +81,16 @@ def generate(cfg: Config, scheds: dict) -> dict:
            "naive": 100.0 * float(corr["ee"][common].mean()),
            "proposed": 100.0 * float(corr["ee"][common].mean())}
 
-    # ---- Table A: saturated throughput (λ=0 backlog drain) ----
-    zeros = np.zeros(n, dtype=float)
-    sat = {}
-    for r, s in entries.items():
-        completion, _ = simulate(s, zeros)
-        span = float(completion[common].max())            # first arrival = 0
-        sat[r] = len(common) / span
+    # ---- Table A: saturated throughput == capacity-based divergence λ ----
+    sat = dict(div)      # identical by definition (samples/s vs req/s)
 
     table_a = [{"runtime": r,
                 "accuracy_pct": round(acc[r], 2),
                 "saturated_throughput_sps": round(sat[r], 1),
-                "divergence_lambda_mean": div[r]["mean"],
-                "divergence_lambda_p99": div[r]["p99"]} for r in RUNTIMES]
+                "divergence_lambda": round(div[r], 1)} for r in RUNTIMES]
 
     # ---- Table B: deterministic λ1/λ2/λ3 from the divergence points ----
-    D = {}
-    for r in RUNTIMES:
-        d = div[r]["mean"]
-        if d is None:
-            d = float(lams[-1])
-            notes.append(f"{r}: divergence not reached within sweep; "
-                         f"using sweep max {d:g} as D_{r}")
-        D[r] = d
+    D = {r: div[r] for r in RUNTIMES}
     raw = {"lambda1": _snap(lams, D["plain"] - step),
            "lambda2": _snap(lams, (D["plain"] + D["naive"]) / 2.0),
            "lambda3": _snap(lams, D["proposed"] - step)}
@@ -132,7 +123,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
             g = metrics.goodput_vs_slo(s, arr, common, slo_grid, "wallclock")
             completion, _ = simulate(s, arr)
             throughputs[(r, lam)] = len(common) / metrics.wallclock(completion, arr, common)
-            diverged = div[r]["mean"] is not None and lam >= div[r]["mean"]
+            diverged = lam >= div[r]                  # arrival rate ≥ capacity
             table_b.append({"runtime": r, "lambda": lam,
                             "avg_ms": round(mean, 2), "p99_ms": round(p99, 2),
                             "goodput_slo_avg": round(float(g[0]), 1),
@@ -176,7 +167,8 @@ def generate(cfg: Config, scheds: dict) -> dict:
         "goodput_mode": "wallclock",
         "common_set_size": len(common), "dropped_pct": round(drop_pct, 3),
         "lambda_sweep": dict(cfg.arrivals["lambda_sweep"]),
-        "divergence_lambda": div,
+        "divergence_lambda_capacity": div,
+        "knee_lambda_reference": knee,   # sweep-curve latency minimum (NOT divergence)
         "D_used_for_selection": D,
         "lambda_selection": {"raw": raw, "chosen": chosen, "notes": notes},
         "slo": {"raw_mean_ms": round(raw_mean, 3), "raw_p99_ms": round(raw_p99, 3),
@@ -209,14 +201,13 @@ def generate(cfg: Config, scheds: dict) -> dict:
 
 def _print_tables(table_a, table_b, meta):
     print("\n[e2e] Table A — λ-independent metrics")
-    hdr = f"{'runtime':<10} {'acc(%)':>8} {'sat.thr(s/s)':>13} {'divλ(mean)':>11} {'divλ(p99)':>10}"
+    hdr = f"{'runtime':<10} {'acc(%)':>8} {'sat.thr(s/s)':>13} {'divλ(capacity)':>15}"
     print(hdr)
     print("-" * len(hdr))
     for row in table_a:
-        dm = "-" if row["divergence_lambda_mean"] is None else f"{row['divergence_lambda_mean']:g}"
-        dp = "-" if row["divergence_lambda_p99"] is None else f"{row['divergence_lambda_p99']:g}"
         print(f"{row['runtime']:<10} {row['accuracy_pct']:>8.2f} "
-              f"{row['saturated_throughput_sps']:>13.1f} {dm:>11} {dp:>10}")
+              f"{row['saturated_throughput_sps']:>13.1f} "
+              f"{row['divergence_lambda']:>15.1f}")
 
     slo = meta["slo"]
     print(f"\n[e2e] Table B — common-λ grid  "
