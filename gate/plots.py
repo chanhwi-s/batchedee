@@ -344,6 +344,46 @@ def plot_timeline(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot7_timeline")
 
 
+# --------------------------------------------------------------------------- #
+# Plot 8: per-runtime execution stats (mean service time + op count)
+# --------------------------------------------------------------------------- #
+def plot_exec_stats(cfg: Config, schedules: dict):
+    """Plot 8: grouped bars — mean execution time per op and op count,
+    per runtime and per stage (seg1/whole vs seg2).
+
+    Stats are recomputed from the schedules (works with any pkl); `run.py`
+    also stores the same numbers under schedules['op_stats'].
+    """
+    from .runtimes import op_stats
+
+    B = int(cfg.batching.seg2_batch)
+    prop = schedules["proposed"][B]
+    rows = [("plain", schedules["plain"]),
+            ("naive", schedules["naive"]),
+            (_prop_label(prop, B), prop)]
+    stats = [(name, op_stats(s)) for name, s in rows]
+
+    x = np.arange(len(rows))
+    w = 0.38
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
+    panels = [("mean_ms", "Mean execution time per op (ms)", "%.2f"),
+              ("count", "Execution count", "%d")]
+    for ax, (field, ylab, fmt) in zip(axes, panels):
+        s1 = [st.get("seg1", st.get("whole", {})).get(field, 0) for _, st in stats]
+        s2 = [st.get("seg2", {}).get(field, 0) for _, st in stats]
+        b1 = ax.bar(x - w / 2, s1, w, color=_TL_COLORS["seg1"], label="seg1 / whole")
+        b2 = ax.bar(x + w / 2, s2, w, color=_TL_COLORS["seg2"], label="seg2")
+        ax.bar_label(b1, labels=[fmt % v if v else "" for v in s1], fontsize=8)
+        ax.bar_label(b2, labels=[fmt % v if v else "" for v in s2], fontsize=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels([name for name, _ in rows], fontsize=9)
+        ax.set_ylabel(ylab)
+        ax.grid(True, axis="y", alpha=0.25)
+    axes[0].legend(fontsize=8)
+    fig.suptitle("Per-runtime execution stats (measured service times)")
+    return _save(fig, cfg, "plot8_exec_stats")
+
+
 def plot_all(cfg: Config, schedules: dict):
     plot_slo_goodput(cfg, schedules)
     plot_latency_kde(cfg, schedules)
@@ -351,3 +391,4 @@ def plot_all(cfg: Config, schedules: dict):
     plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
+    plot_exec_stats(cfg, schedules)

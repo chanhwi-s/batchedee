@@ -334,6 +334,22 @@ def simulate_breakdown(sched: Schedule, arrivals: np.ndarray) -> dict:
     return {**comp, "completed": completed}
 
 
+def op_stats(sched: Schedule) -> dict:
+    """Per-kind execution count and mean measured service time (ms).
+
+    Returns e.g. {'seg1': {'count': 156, 'mean_ms': 14.2},
+                  'seg2': {'count': 139, 'mean_ms': 5.0}}
+    (plain has a single 'whole' entry). Derivable from any Schedule, old or new.
+    """
+    out: dict = {}
+    for kind in ("whole", "seg1", "seg2"):
+        durs = [op.duration for op in sched.ops if op.kind == kind]
+        if durs:
+            out[kind] = {"count": len(durs),
+                         "mean_ms": float(np.mean(durs)) * 1000.0}
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Orchestration: build all schedules with a single GPU pass
 # --------------------------------------------------------------------------- #

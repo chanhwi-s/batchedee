@@ -77,6 +77,10 @@ Outputs:
      clock: one contiguous bar colored by state (arrival wait / seg1 or whole /
      seg2). `plots.timeline_xlim_ms` clips the x-axis for zooming; works in both
      seg2 flush modes.
+  6. `plot8_exec_stats` — per-runtime bars: mean measured service time per op
+     and op count, split by stage (seg1/whole vs seg2). The same numbers are
+     printed by `run.py run` and stored in the pkl under
+     `schedules['op_stats']`.
 
 ## Methodology notes
 

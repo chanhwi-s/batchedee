@@ -56,6 +56,20 @@ def cmd_run(cfg, args):
     for B, s in sorted(scheds["proposed"].items()):
         print(f"[run] proposed(seg2={B}): completed={len(s.completed_ids())}, dropped={len(s.dropped)}")
 
+    # per-runtime op stats (count + mean service time), stored in the pkl
+    def _fmt(st):
+        return "  ".join(f"{k}: n={v['count']}, mean={v['mean_ms']:.2f}ms" for k, v in st.items())
+
+    scheds["op_stats"] = {
+        "plain": runtimes.op_stats(scheds["plain"]),
+        "naive": runtimes.op_stats(scheds["naive"]),
+        "proposed": {B: runtimes.op_stats(s) for B, s in scheds["proposed"].items()},
+    }
+    print(f"[run] plain : {_fmt(scheds['op_stats']['plain'])}")
+    print(f"[run] naive : {_fmt(scheds['op_stats']['naive'])}")
+    for B, st in sorted(scheds["op_stats"]["proposed"].items()):
+        print(f"[run] proposed(seg2={B}): {_fmt(st)}")
+
     with open(_sched_path(cfg), "wb") as f:
         pickle.dump(scheds, f)
     print(f"[run] saved schedules -> {_sched_path(cfg)}")
