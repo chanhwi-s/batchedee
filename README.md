@@ -64,10 +64,12 @@ Outputs:
 - Schedules (pickled) → `artifacts/results/schedules.pkl`
 - Figures (png + pdf) → `artifacts/plots/`
   1. `plot1_slo_goodput` — SLO 0–200 ms vs goodput; one curve per `seg2_batch` in
-     `{2,4,8,16,32}`, plus `plain` and `naive`. `metrics.goodput_arrivals`
-     selects the arrival model: `"instant"` (all requests queued at t=0 —
-     saturated drain, no arrival-limited flattening) or `"poisson"` (the shared
-     λ trace). The load plot always uses the Poisson sweep.
+     `{2,4,8,16,32}`, plus `plain` and `naive`.
+
+  All single-λ figures (goodput, KDE, CDF, timeline) share `arrivals.lambda`:
+  `0` disables Poisson modeling entirely (all requests queued at t=0, saturated
+  drain), `> 0` uses the Poisson trace at that rate. The λ-sweep figures (load
+  vs latency, breakdown) always use `arrivals.lambda_sweep`.
   2. `plot2_latency_kde` — KDE of per-sample latency per runtime.
   3. `plot3_latency_cdf` — empirical CDF of per-sample latency per runtime.
   4. `plot4_load_latency` — response time (mean **and** p99) vs λ per runtime.

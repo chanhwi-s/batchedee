@@ -51,29 +51,26 @@ def _prop_label(sched, B: int) -> str:
     return f"proposed (seg2={B})"
 
 
-def _goodput_arrivals(cfg: Config, n: int):
-    """Arrival vector for the goodput plot (metrics.goodput_arrivals).
+def _single_arrivals(cfg: Config, n: int):
+    """Arrival vector for every single-λ plot (all figures except the λ sweeps).
 
-    'poisson' : the shared Poisson trace (arrivals.lambda) — latency includes
-                batch-formation wait, so goodput is arrival-limited at low λ.
-    'instant' : all n requests queued at t=0 (saturated backlog) — goodput
-                measures pure drain capability; only plot4 keeps Poisson load.
+    arrivals.lambda == 0 -> NO Poisson modeling: all n requests are queued at
+    t=0 (saturated backlog) and the runtimes just drain them back-to-back.
+    arrivals.lambda > 0  -> the shared Poisson trace at that rate.
+    The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep.
     Returns (arrivals_seconds, description-for-title).
     """
-    mode = str(cfg.get_path("metrics.goodput_arrivals", "poisson")).lower()
-    if mode == "instant":
+    lam = float(cfg.arrivals["lambda"])
+    if lam <= 0:
         return np.zeros(n, dtype=float), "saturated: all arrivals at t=0"
-    if mode == "poisson":
-        lam = float(cfg.arrivals["lambda"])
-        return poisson_arrivals(n, lam, int(cfg.arrivals.seed)), f"λ={lam:g} req/s"
-    raise ValueError(f"metrics.goodput_arrivals must be 'poisson' or 'instant', got {mode!r}")
+    return poisson_arrivals(n, lam, int(cfg.arrivals.seed)), f"λ={lam:g} req/s"
 
 
 # --------------------------------------------------------------------------- #
 def plot_slo_goodput(cfg: Config, schedules: dict):
     """Plot 1: SLO vs Goodput, one curve per seg2_batch + plain + naive."""
     n = schedules["plain"].n_requests
-    arr, arr_desc = _goodput_arrivals(cfg, n)
+    arr, arr_desc = _single_arrivals(cfg, n)
     slo = slo_grid_ms(cfg)
 
     prop = schedules["proposed"]  # {B: Schedule}
@@ -103,9 +100,8 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
 
 def plot_latency_kde(cfg: Config, schedules: dict):
     """Plot 2: KDE of per-sample latency per runtime."""
-    lam = float(cfg.arrivals["lambda"])
     n = schedules["plain"].n_requests
-    arr = poisson_arrivals(n, lam, int(cfg.arrivals.seed))
+    arr, arr_desc = _single_arrivals(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
     scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
@@ -123,7 +119,7 @@ def plot_latency_kde(cfg: Config, schedules: dict):
                 color=colors.get(name, "C0"))
     ax.set_xlabel("Per-sample latency (ms)")
     ax.set_ylabel("Density")
-    ax.set_title(f"Latency distribution (KDE)  (λ={lam:g}, N_common={len(common)})")
+    ax.set_title(f"Latency distribution (KDE)  ({arr_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend()
     return _save(fig, cfg, "plot2_latency_kde")
@@ -131,9 +127,8 @@ def plot_latency_kde(cfg: Config, schedules: dict):
 
 def plot_latency_cdf(cfg: Config, schedules: dict):
     """Plot 3: empirical CDF of per-sample latency per runtime."""
-    lam = float(cfg.arrivals["lambda"])
     n = schedules["plain"].n_requests
-    arr = poisson_arrivals(n, lam, int(cfg.arrivals.seed))
+    arr, arr_desc = _single_arrivals(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
     scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
@@ -147,7 +142,7 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
         ax.plot(l, y, lw=2, label=name, color=colors.get(name, "C0"))
     ax.set_xlabel("Per-sample latency (ms)")
     ax.set_ylabel("CDF")
-    ax.set_title(f"Latency CDF  (λ={lam:g}, N_common={len(common)})")
+    ax.set_title(f"Latency CDF  ({arr_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend()
     return _save(fig, cfg, "plot3_latency_cdf")
@@ -310,9 +305,8 @@ def plot_timeline(cfg: Config, schedules: dict):
     """
     from matplotlib.patches import Patch
 
-    lam = float(cfg.arrivals["lambda"])
     n = schedules["plain"].n_requests
-    arr = poisson_arrivals(n, lam, int(cfg.arrivals.seed))
+    arr, arr_desc = _single_arrivals(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
     rows = [("plain", schedules["plain"]),
@@ -337,7 +331,7 @@ def plot_timeline(cfg: Config, schedules: dict):
         ax.set_xlim(0, float(xlim))
     else:
         ax.set_xlim(left=0)
-    ax.set_title(f"GPU execution timeline  (λ={lam:g} req/s)")
+    ax.set_title(f"GPU execution timeline  ({arr_desc})")
     ax.grid(True, axis="x", alpha=0.25)
     ax.legend(handles=[Patch(facecolor=_TL_COLORS[k], label=_TL_LABELS[k])
                        for k in ("wait", "seg1", "seg2")],

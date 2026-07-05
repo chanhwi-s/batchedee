@@ -38,7 +38,11 @@ batching:
   seg2_flush_mode: "fixed"
 
 arrivals:
-  lambda: 500.0                                  # single Poisson rate (requests/sec) for KDE/CDF
+  # Single arrival rate (req/s) for all single-λ plots (goodput/KDE/CDF/timeline).
+  #   0   -> NO Poisson modeling: all requests queued at t=0 (saturated backlog)
+  #   > 0 -> Poisson trace at this rate
+  # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
+  lambda: 0
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
     start: 100.0
@@ -57,12 +61,6 @@ metrics:
   #   "wallclock"       : (# good samples) / (wall-clock span)          [spec §6, default]
   #   "mean_throughput" : (1/N) * sum over good samples of (1/latency)
   goodput_mode: "wallclock"
-  # Arrival model for the goodput plot (plot1):
-  #   "instant" : all requests queued at t=0 (saturated backlog) -> goodput
-  #               measures pure drain capability, no batch-formation wait
-  #   "poisson" : requests arrive by the Poisson trace (arrivals.lambda)
-  # plot4 (load vs latency) ALWAYS uses the Poisson lambda sweep.
-  goodput_arrivals: "instant"
 
 runtime:
   warmup_iters: 20                               # CUDA warmup runs per graph (excluded from timing)
