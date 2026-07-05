@@ -239,6 +239,32 @@ def simulate(sched: Schedule, arrivals: np.ndarray):
     return completion, completed_mask
 
 
+def simulate_starts(sched: Schedule, arrivals: np.ndarray):
+    """Like simulate(), but also return each sample's stage-1 op start time —
+    the moment the sample's seg1/whole batch is fed to the GPU. Used as the
+    latency origin in saturated (lambda=0) mode, where waiting behind the
+    t=0 backlog is a setup artifact, not a property of the runtime.
+
+    Returns (completion[N], stage1_start[N], completed_mask[N]).
+    """
+    n = sched.n_requests
+    completion = np.full(n, np.inf, dtype=float)
+    stage1_start = np.full(n, np.inf, dtype=float)
+    gpu_free = 0.0
+    for op in sched.ops:
+        if op.gate_on_arrival and len(op.members):
+            start = max(gpu_free, float(arrivals[op.members].max()))
+        else:
+            start = gpu_free
+        end = start + op.duration
+        gpu_free = end
+        if op.kind in ("seg1", "whole"):
+            stage1_start[op.members] = start
+        if len(op.completes):
+            completion[op.completes] = end
+    return completion, stage1_start, np.isfinite(completion)
+
+
 def latencies(sched: Schedule, arrivals: np.ndarray):
     """Per-sample latency array (inf where not completed)."""
     completion, mask = simulate(sched, arrivals)

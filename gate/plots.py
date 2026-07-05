@@ -56,21 +56,24 @@ def _single_arrivals(cfg: Config, n: int):
 
     arrivals.lambda == 0 -> NO Poisson modeling: all n requests are queued at
     t=0 (saturated backlog) and the runtimes just drain them back-to-back.
-    arrivals.lambda > 0  -> the shared Poisson trace at that rate.
+    Latency is then measured from each sample's seg1 input (service latency),
+    not from t=0 — waiting behind the backlog is a setup artifact.
+    arrivals.lambda > 0  -> the shared Poisson trace; latency = response time.
     The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep.
-    Returns (arrivals_seconds, description-for-title).
+    Returns (arrivals_seconds, description-for-title, latency_origin).
     """
     lam = float(cfg.arrivals["lambda"])
     if lam <= 0:
-        return np.zeros(n, dtype=float), "saturated: all arrivals at t=0"
-    return poisson_arrivals(n, lam, int(cfg.arrivals.seed)), f"λ={lam:g} req/s"
+        return (np.zeros(n, dtype=float),
+                "saturated; latency from seg1 input", "stage1_start")
+    return poisson_arrivals(n, lam, int(cfg.arrivals.seed)), f"λ={lam:g} req/s", "arrival"
 
 
 # --------------------------------------------------------------------------- #
 def plot_slo_goodput(cfg: Config, schedules: dict):
     """Plot 1: SLO vs Goodput, one curve per seg2_batch + plain + naive."""
     n = schedules["plain"].n_requests
-    arr, arr_desc = _single_arrivals(cfg, n)
+    arr, arr_desc, origin = _single_arrivals(cfg, n)
     slo = slo_grid_ms(cfg)
 
     prop = schedules["proposed"]  # {B: Schedule}
@@ -79,13 +82,13 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
     mode = cfg.get_path("metrics.goodput_mode", "mean_throughput")
 
     fig, ax = plt.subplots(figsize=(8, 5.5))
-    ax.plot(slo, metrics.goodput_vs_slo(schedules["plain"], arr, common, slo, mode),
+    ax.plot(slo, metrics.goodput_vs_slo(schedules["plain"], arr, common, slo, mode, origin),
             "k--", lw=2, label="plain")
-    ax.plot(slo, metrics.goodput_vs_slo(schedules["naive"], arr, common, slo, mode),
+    ax.plot(slo, metrics.goodput_vs_slo(schedules["naive"], arr, common, slo, mode, origin),
             color="0.45", ls=":", lw=2, label="naive")
     cmap = plt.cm.viridis(np.linspace(0, 0.9, len(prop)))
     for c, (B, sched) in zip(cmap, sorted(prop.items())):
-        ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode),
+        ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode, origin),
                 color=c, lw=1.8, label=_prop_label(sched, B))
 
     ylabel = ("Goodput  (1/N · Σ 1/latency, samples/s)" if mode == "mean_throughput"
@@ -101,13 +104,13 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
 def plot_latency_kde(cfg: Config, schedules: dict):
     """Plot 2: KDE of per-sample latency per runtime."""
     n = schedules["plain"].n_requests
-    arr, arr_desc = _single_arrivals(cfg, n)
+    arr, arr_desc, origin = _single_arrivals(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
     scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
     common = metrics.common_completed(list(scheds.values()))
 
-    lats = {name: metrics.latency_ms(s, arr, common) for name, s in scheds.items()}
+    lats = {name: metrics.latency_ms(s, arr, common, origin) for name, s in scheds.items()}
     lo = min(l.min() for l in lats.values())
     hi = max(np.percentile(l, 99.5) for l in lats.values())
     grid = np.linspace(lo, hi, 400)
@@ -117,7 +120,8 @@ def plot_latency_kde(cfg: Config, schedules: dict):
     for name, l in lats.items():
         ax.plot(grid, _kde(l, grid), lw=2, label=name,
                 color=colors.get(name, "C0"))
-    ax.set_xlabel("Per-sample latency (ms)")
+    ax.set_xlabel("Per-sample service latency (ms, from seg1 input)"
+                  if origin == "stage1_start" else "Per-sample latency (ms)")
     ax.set_ylabel("Density")
     ax.set_title(f"Latency distribution (KDE)  ({arr_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
@@ -128,7 +132,7 @@ def plot_latency_kde(cfg: Config, schedules: dict):
 def plot_latency_cdf(cfg: Config, schedules: dict):
     """Plot 3: empirical CDF of per-sample latency per runtime."""
     n = schedules["plain"].n_requests
-    arr, arr_desc = _single_arrivals(cfg, n)
+    arr, arr_desc, origin = _single_arrivals(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
     scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
@@ -137,10 +141,11 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
     fig, ax = plt.subplots(figsize=(8, 5))
     colors = {"plain": "k", "naive": "0.45"}
     for name, s in scheds.items():
-        l = np.sort(metrics.latency_ms(s, arr, common))
+        l = np.sort(metrics.latency_ms(s, arr, common, origin))
         y = np.arange(1, len(l) + 1) / len(l)
         ax.plot(l, y, lw=2, label=name, color=colors.get(name, "C0"))
-    ax.set_xlabel("Per-sample latency (ms)")
+    ax.set_xlabel("Per-sample service latency (ms, from seg1 input)"
+                  if origin == "stage1_start" else "Per-sample latency (ms)")
     ax.set_ylabel("CDF")
     ax.set_title(f"Latency CDF  ({arr_desc}, N_common={len(common)})")
     ax.grid(True, alpha=0.3)
@@ -306,7 +311,7 @@ def plot_timeline(cfg: Config, schedules: dict):
     from matplotlib.patches import Patch
 
     n = schedules["plain"].n_requests
-    arr, arr_desc = _single_arrivals(cfg, n)
+    arr, arr_desc, _origin = _single_arrivals(cfg, n)
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
     rows = [("plain", schedules["plain"]),

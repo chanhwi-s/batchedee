@@ -10,7 +10,27 @@ from __future__ import annotations
 
 import numpy as np
 
-from .runtimes import Schedule, simulate
+from .runtimes import Schedule, simulate, simulate_starts
+
+
+def _latency_seconds(sched: Schedule, arrivals: np.ndarray, origin: str):
+    """Per-sample latency (seconds) + completion times.
+
+    origin 'arrival'      : completion - arrival (response time).
+    origin 'stage1_start' : completion - start of the sample's seg1/whole op
+                            (service latency; excludes waiting behind the
+                            backlog in saturated lambda=0 mode).
+    """
+    if origin == "stage1_start":
+        completion, s1, _ = simulate_starts(sched, arrivals)
+        with np.errstate(invalid="ignore"):          # dropped samples: inf - inf
+            lat = completion - s1
+        lat[~np.isfinite(completion)] = np.inf
+        return lat, completion
+    if origin == "arrival":
+        completion, _ = simulate(sched, arrivals)
+        return completion - arrivals, completion
+    raise ValueError(f"latency origin must be 'arrival' or 'stage1_start', got {origin!r}")
 
 
 def common_completed(schedules: list[Schedule]) -> np.ndarray:
@@ -32,7 +52,8 @@ def wallclock(completion: np.ndarray, arrivals: np.ndarray, ids: np.ndarray) -> 
 
 
 def goodput_vs_slo(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray,
-                   slo_ms_grid: np.ndarray, mode: str = "mean_throughput") -> np.ndarray:
+                   slo_ms_grid: np.ndarray, mode: str = "mean_throughput",
+                   origin: str = "arrival") -> np.ndarray:
     """Goodput for each SLO in the grid, over the common set only.
 
     Two definitions (selected by `mode`):
@@ -46,8 +67,8 @@ def goodput_vs_slo(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray
     * "wallclock" (spec §6): goodput(SLO) = (# good samples) / (wall-clock span).
       wall-clock = last completion - first arrival over the common set.
     """
-    completion, _ = simulate(sched, arrivals)
-    lat_c = (completion - arrivals)[common_ids]       # seconds, > 0
+    lat, completion = _latency_seconds(sched, arrivals, origin)
+    lat_c = lat[common_ids]                            # seconds, > 0
     N = len(common_ids)
     out = np.empty(len(slo_ms_grid), dtype=float)
 
@@ -66,11 +87,11 @@ def goodput_vs_slo(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray
     return out
 
 
-def latency_ms(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray) -> np.ndarray:
+def latency_ms(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray,
+               origin: str = "arrival") -> np.ndarray:
     """Per-sample latency (ms) over the common set."""
-    completion, _ = simulate(sched, arrivals)
-    lat = (completion - arrivals)[common_ids]
-    return lat * 1000.0
+    lat, _ = _latency_seconds(sched, arrivals, origin)
+    return lat[common_ids] * 1000.0
 
 
 def response_stats(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray):
