@@ -15,8 +15,10 @@ Table B (runtime × λ grid): the three λ values are derived deterministically
 from the capacity-based divergence points D_plain/D_naive/D_proposed:
   λ1 = D_plain − step, λ2 = grid-snapped midpoint(D_plain, D_naive),
   λ3 = D_proposed − step; collisions collapse to the distinct achievable
-subset (recorded in meta). The two SLOs are plain's mean / p99 response time
-at λ1, rounded to the nearest 10 ms, then held fixed across all rows.
+subset (recorded in meta). A fine sweep step (e.g. 10) keeps λ3 above the
+naive capacity so that only proposed is stable there. The two SLOs are
+plain's mean / p99 response time at λ1, rounded to the nearest 10 ms, then
+held fixed across all rows.
 """
 from __future__ import annotations
 
@@ -42,6 +44,7 @@ def _snap(lams: np.ndarray, x: float) -> float:
 
 def _round10(x: float) -> int:
     return int(round(x / 10.0) * 10)
+
 
 
 def _check(checks: list, name: str, ok: bool, detail: str):
@@ -134,11 +137,14 @@ def generate(cfg: Config, scheds: dict) -> dict:
     lam1 = chosen[0]
     g_plain = next(row for row in table_b
                    if row["runtime"] == "plain" and row["lambda"] == lam1)
-    target = 0.99 * lam1
+    # by construction of SLO_p99, ~99% of plain's completions fit the SLO, so
+    # goodput ≈ 0.99 × its completed throughput at λ1 (not 0.99·λ1, which
+    # drifts when λ1 sits close to plain's capacity).
+    target = 0.99 * throughputs[("plain", lam1)]
     rel = abs(g_plain["goodput_slo_p99"] - target) / target
-    _check(checks, "plain goodput@SLO_p99 ≈ 0.99·λ1", rel <= 0.05,
-           f"got {g_plain['goodput_slo_p99']:g} vs 0.99·λ1={target:g} "
-           f"(rel. diff {100*rel:.1f}%)")
+    _check(checks, "plain goodput@SLO_p99 ≈ 0.99·throughput(λ1)", rel <= 0.05,
+           f"got {g_plain['goodput_slo_p99']:g} vs 0.99·thr={target:.1f} "
+           f"(λ1={lam1:g}; rel. diff {100*rel:.1f}%)")
 
     for row in table_b:
         if row["diverged"]:
