@@ -88,7 +88,7 @@ paths:
   hf_cache: "artifacts/hf_cache"
 
 plots:
-  dpi: 150
+  dpi: 300                                       # PNG raster dpi (PDF is vector)
   format: "png"
   # Timeline plot (plot7): clip the x-axis to the first N ms (null = full run).
   timeline_xlim_ms: null
