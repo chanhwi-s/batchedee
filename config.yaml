@@ -28,9 +28,9 @@ early_exit:
                                                  # fixed across the SLO sweep
 
 batching:
-  seg1_batch: 1                                 # seg1 accumulation batch (all runtimes)
+  seg1_batch: 32                                 # seg1 accumulation batch (all runtimes)
   seg2_batch: 16                                 # proposed seg2 flush size (single-run default)
-  seg2_batch_sweep: [1, 2, 4, 8, 16, 32]            # plot 1: one curve per seg2 batch size
+  seg2_batch_sweep: [4, 8, 16, 32]            # plot 1: one curve per seg2 batch size
   # proposed seg2 flush mode:
   #   "fixed": queue >= seg2_batch -> flush exactly seg2_batch (static ONNX graph)
   #   "all"  : queue >= seg2_batch -> flush the ENTIRE queue (dynamic ONNX graph,
@@ -46,7 +46,7 @@ arrivals:
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
     start: 100.0
-    stop: 3000.0
+    stop: 2000.0
     step: 100.0
   seed: 1234                                     # fixes arrival trace + request sampling
 
