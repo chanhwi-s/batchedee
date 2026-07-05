@@ -98,3 +98,30 @@ def response_stats(sched: Schedule, arrivals: np.ndarray, common_ids: np.ndarray
     """Return (mean_ms, p99_ms) response time over the common set."""
     lat = latency_ms(sched, arrivals, common_ids)
     return float(np.mean(lat)), float(np.percentile(lat, 99))
+
+
+def load_latency_curves(sched: Schedule, lams: np.ndarray, common_ids: np.ndarray,
+                        seed: int):
+    """(mean_ms[], p99_ms[]) response time over the λ sweep."""
+    from .arrivals import poisson_arrivals
+
+    means = np.empty(len(lams))
+    p99s = np.empty(len(lams))
+    for j, lam in enumerate(lams):
+        arr = poisson_arrivals(sched.n_requests, float(lam), seed)
+        means[j], p99s[j] = response_stats(sched, arr, common_ids)
+    return means, p99s
+
+
+def divergence_lambda(lams: np.ndarray, curve: np.ndarray):
+    """λ at the response-time minimum — the knee of the load curve.
+
+    Below it, latency falls with λ (batch-formation wait dominates); beyond it,
+    latency rises (queueing dominates) i.e. the runtime starts to diverge.
+    Returns None when the curve is still falling at the end of the sweep
+    (divergence not reached within the swept range).
+    """
+    i = int(np.argmin(curve))
+    if i == len(curve) - 1:
+        return None
+    return float(lams[i])

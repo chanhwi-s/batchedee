@@ -187,8 +187,12 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
 
 
 def plot_load_latency(cfg: Config, schedules: dict):
-    """Plot 4: Load (lambda) vs response time (mean + p99) per runtime."""
-    n = schedules["plain"].n_requests
+    """Plot 4: Load (lambda) vs response time (mean + p99) per runtime.
+
+    Also detects each runtime's divergence point — the λ at the minimum of the
+    response-time curve (falling before it: formation-wait dominated; rising
+    beyond it: queueing dominated) — prints it, and returns it as a dict.
+    """
     B = int(cfg.batching.seg2_batch)
     prop = schedules["proposed"][B]
     scheds = {"plain": schedules["plain"], "naive": schedules["naive"], _prop_label(prop, B): prop}
@@ -196,14 +200,19 @@ def plot_load_latency(cfg: Config, schedules: dict):
     lams = lambda_grid(cfg)
     base_seed = int(cfg.arrivals.seed)
 
-    means = {name: [] for name in scheds}
-    p99s = {name: [] for name in scheds}
-    for lam in lams:
-        arr = poisson_arrivals(n, lam, base_seed)
-        for name, s in scheds.items():
-            m, p = metrics.response_stats(s, arr, common)
-            means[name].append(m)
-            p99s[name].append(p)
+    means, p99s, divergence = {}, {}, {}
+    for name, s in scheds.items():
+        means[name], p99s[name] = metrics.load_latency_curves(s, lams, common, base_seed)
+        dm = metrics.divergence_lambda(lams, means[name])
+        dp = metrics.divergence_lambda(lams, p99s[name])
+        divergence[name] = {"mean": dm, "p99": dp}
+
+        def _fmt(d):
+            if d is None:
+                return f"not reached within sweep (still falling at λ={lams[-1]:g})"
+            return (f"≤{lams[0]:g} (already rising at sweep start)" if d == lams[0]
+                    else f"{d:g}")
+        print(f"[plot4] {name}: divergence λ = {_fmt(dm)} (mean) | {_fmt(dp)} (p99)  [req/s]")
 
     fig, ax = plt.subplots(figsize=(8.5, 5.5))
     colors = {"plain": "k", "naive": "0.45"}
@@ -216,7 +225,8 @@ def plot_load_latency(cfg: Config, schedules: dict):
     ax.set_title(f"Load vs Latency  (N_common={len(common)})")
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, ncol=len(scheds))
-    return _save(fig, cfg, "plot4_load_latency")
+    _save(fig, cfg, "plot4_load_latency")
+    return divergence
 
 
 from .runtimes import BREAKDOWN_KEYS, simulate_breakdown  # noqa: E402
@@ -424,7 +434,8 @@ def plot_all(cfg: Config, schedules: dict):
     plot_slo_goodput(cfg, schedules)
     plot_latency_kde(cfg, schedules)
     plot_latency_cdf(cfg, schedules)
-    plot_load_latency(cfg, schedules)
+    divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
     plot_exec_stats(cfg, schedules)
+    return divergence

@@ -82,7 +82,12 @@ def cmd_plot(cfg, args):
         sys.exit(f"[plot] no schedules at {p}; run `python run.py run` first.")
     with open(p, "rb") as f:
         scheds = pickle.load(f)
-    plots_mod.plot_all(cfg, scheds)
+    divergence = plots_mod.plot_all(cfg, scheds)
+    if divergence:
+        scheds["divergence"] = divergence          # λ at each runtime's latency minimum
+        with open(p, "wb") as f:
+            pickle.dump(scheds, f)
+        print(f"[plot] divergence λ recorded in {p} (schedules['divergence'])")
 
 
 def cmd_all(cfg, args):
