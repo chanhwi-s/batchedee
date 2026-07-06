@@ -7,6 +7,7 @@ Subcommands
   run      Run the GPU execution pass (+ accuracy pass), build schedules, save.
   plot     Load saved schedules and render the figures (png + pdf).
   e2e      Generate the end-to-end comparison tables (Table A/B, json + csv).
+  seg1bench  Seg1 kernel-time microbenchmark over batch sizes 1..512 (plot10).
   all      export -> run -> plot -> e2e.
 
 Usage
@@ -111,6 +112,12 @@ def cmd_e2e(cfg, args):
     e2e_table.generate(cfg, scheds)
 
 
+def cmd_seg1bench(cfg, args):
+    ensure_dirs(cfg)
+    from gate import seg1_bench
+    seg1_bench.run(cfg)
+
+
 def cmd_all(cfg, args):
     cmd_export(cfg, args)
     cmd_run(cfg, args)
@@ -120,7 +127,7 @@ def cmd_all(cfg, args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", choices=["export", "run", "plot", "all", "e2e"])
+    ap.add_argument("command", choices=["export", "run", "plot", "all", "e2e", "seg1bench"])
     ap.add_argument("--config", default="config.yaml")
     ap.add_argument("--force", action="store_true", help="re-export ONNX even if cached")
     ap.add_argument("--runtimes", nargs="+", default=["plain", "naive", "proposed"],
@@ -131,7 +138,7 @@ def main():
     cache = setup_hf_cache(cfg)          # writable HF/timm cache before timm import
     print(f"[env] HF cache -> {cache}")
     {"export": cmd_export, "run": cmd_run, "plot": cmd_plot,
-     "all": cmd_all, "e2e": cmd_e2e}[args.command](cfg, args)
+     "all": cmd_all, "e2e": cmd_e2e, "seg1bench": cmd_seg1bench}[args.command](cfg, args)
 
 
 if __name__ == "__main__":

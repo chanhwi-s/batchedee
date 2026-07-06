@@ -42,6 +42,10 @@ def seg1_path(cfg: Config) -> str:
     return _p(cfg, f"seg1_bs{int(cfg.batching.seg1_batch)}.onnx")
 
 
+def seg1_path_for(cfg: Config, bs: int) -> str:
+    return _p(cfg, f"seg1_bs{int(bs)}.onnx")
+
+
 def seg2_static_path(cfg: Config, b: int) -> str:
     return _p(cfg, f"seg2_static_bs{int(b)}.onnx")
 
@@ -72,6 +76,25 @@ def _export(module, args, path, input_names, output_names, dynamic_axes=None, fo
         )
     print(f"[export] wrote: {path}")
     return path
+
+
+def export_seg1_sizes(cfg: Config, sizes: list[int], force: bool = False) -> dict:
+    """Export static seg1 graphs for a batch-size sweep (seg1 microbenchmark)."""
+    import torch
+
+    from .model_split import Seg1, load_ee_model
+
+    os.makedirs(cfg.paths["onnx_dir"], exist_ok=True)
+    H = W = int(cfg.data.crop)
+    ee = load_ee_model(cfg.model.best_ckpt_path, int(cfg.model.num_classes))
+    seg1 = Seg1(ee, exit_after=int(cfg.model.exit_after_block))
+    written = {}
+    for b in sizes:
+        written[b] = _export(
+            seg1, (torch.randn(int(b), 3, H, W),), seg1_path_for(cfg, b),
+            input_names=["image"], output_names=["hidden", "lph_logits"], force=force,
+        )
+    return written
 
 
 def export_all(cfg: Config, which: tuple[str, ...] = ("plain", "naive", "proposed"), force: bool = False):
