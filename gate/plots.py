@@ -412,6 +412,38 @@ def plot_exec_stats(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot8_exec_stats")
 
 
+# --------------------------------------------------------------------------- #
+# Plot 9: naive's dynamic seg2 batch-size distribution
+# --------------------------------------------------------------------------- #
+def plot_naive_seg2_sizes(cfg: Config, schedules: dict):
+    """Plot 9: histogram of naive's seg2 batch sizes.
+
+    naive forwards each seg1 batch's non-exiting samples to seg2 immediately,
+    so its seg2 batch size = per-batch non-exit count — small and irregular.
+    Prints summary stats and draws the integer histogram.
+    """
+    sizes = np.array([len(op.members) for op in schedules["naive"].ops
+                      if op.kind == "seg2"], dtype=np.int64)
+    if len(sizes) == 0:
+        print("[plot9] naive has no seg2 ops; skipped")
+        return None
+    print(f"[plot9] naive seg2 sizes: n={len(sizes)}, mean={sizes.mean():.2f}, "
+          f"median={np.median(sizes):g}, min={sizes.min()}, max={sizes.max()}")
+
+    bins = np.arange(sizes.min(), sizes.max() + 2) - 0.5   # one bin per integer
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    ax.hist(sizes, bins=bins, color=RUNTIME_COLORS["naive"],
+            edgecolor="white", linewidth=0.4)
+    ax.axvline(float(sizes.mean()), color="0.25", linestyle="--", linewidth=1.0)
+    ax.annotate(f"mean {sizes.mean():.1f}", xy=(float(sizes.mean()), 1.0),
+                xycoords=("data", "axes fraction"), xytext=(3, -10),
+                textcoords="offset points", fontsize=7, color="0.25")
+    ax.set_xlabel("Stage-2 batch size (samples)")
+    ax.set_ylabel("Occurrences")
+    ax.set_title("Naive Stage-2 Batch Sizes")
+    return _save(fig, cfg, "plot9_naive_seg2_sizes")
+
+
 def plot_all(cfg: Config, schedules: dict):
     plot_slo_goodput(cfg, schedules)
     plot_latency_kde(cfg, schedules)
@@ -420,4 +452,5 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
     plot_exec_stats(cfg, schedules)
+    plot_naive_seg2_sizes(cfg, schedules)
     return divergence
