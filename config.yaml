@@ -48,7 +48,7 @@ arrivals:
   #     naive: 1650
   #     proposed: 1700
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
-  lambda: 1400
+  lambda: 0
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
     start: 1200.0

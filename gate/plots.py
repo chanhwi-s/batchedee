@@ -21,7 +21,6 @@ from .util import Config, lambda_grid, slo_grid_ms
 
 ps.apply_style()
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.ticker import MaxNLocator  # noqa: E402
 
@@ -211,20 +210,12 @@ def plot_load_latency(cfg: Config, schedules: dict):
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     for r, _ in entries:
-        c = RUNTIME_COLORS[r]
-        m = RUNTIME_STYLES[r]["marker"]
-        ax.plot(lams, means[r], color=c, linestyle="-", marker=m, markevery=4)
-        ax.plot(lams, p99s[r], color=c, linestyle="--", marker=m, markevery=4,
-                markersize=2.6, linewidth=1.0)
-    handles = ([Line2D([], [], color=RUNTIME_COLORS[r], linestyle="-",
-                       marker=RUNTIME_STYLES[r]["marker"], label=RUNTIME_LABELS[r])
-                for r in RUNTIME_ORDER]
-               + [Line2D([], [], color="0.3", linestyle="-", label="mean"),
-                  Line2D([], [], color="0.3", linestyle="--", label="p99")])
+        ax.plot(lams, means[r], color=RUNTIME_COLORS[r],
+                linestyle=RUNTIME_STYLES[r]["linestyle"], label=RUNTIME_LABELS[r])
     ax.set_xlabel(r"Arrival rate $\lambda$ (req/s)")
-    ax.set_ylabel("Latency (ms)")
+    ax.set_ylabel("Mean latency (ms)")
     ax.set_title("Load vs Latency")
-    ax.legend(handles=handles, ncol=2, loc="upper left")
+    ax.legend(loc="upper left")
     _save(fig, cfg, "plot4_load_latency")
     return divergence
 
