@@ -49,9 +49,9 @@ arrivals:
   #     proposed: 1700
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
   lambda: 
-    plain: 1600
-    naive: 1650
-    proposed: 1780
+    plain: 1300
+    naive: 1370
+    proposed: 1515
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
     start: 500.0
@@ -99,7 +99,7 @@ plots:
   # BOTH runtimes in that figure (identical arrival trace). 0 = saturated.
   slo_goodput_lambda:
     plain: 1600                                  # plot1a: Plain vs Proposed
-    naive: 1700                                  # plot1b: Naive vs Proposed
+    naive: 1690                                  # plot1b: Naive vs Proposed
   # Latency KDE (plot2/plot2b): bandwidth as a fraction of the data std
   # (scipy bw_method). Larger = smoother, smaller = spikier; null = Scott rule.
   kde_bandwidth: 0.3
@@ -110,4 +110,4 @@ plots:
   #   kde_clip_percentile: percentile of plotted latencies (99.5 = old behavior)
   # If clipped, state "tail truncated at X ms" in the figure caption.
   kde_xlim_ms: null
-  kde_clip_percentile: 99.5
+  kde_clip_percentile: 99
