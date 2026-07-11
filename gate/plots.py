@@ -21,6 +21,7 @@ from .util import Config, lambda_grid, slo_grid_ms
 
 ps.apply_style()
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.ticker import MaxNLocator  # noqa: E402
 
@@ -178,6 +179,54 @@ def plot_latency_kde(cfg: Config, schedules: dict):
     ax.set_title("Latency Distribution")
     ax.legend(loc="upper right")
     return _save(fig, cfg, "plot2_latency_kde")
+
+
+def plot_latency_kde_sweep(cfg: Config, schedules: dict):
+    """Plot 2b: latency KDE per runtime, one panel per seg2_batch in the sweep.
+
+    Plain/naive curves repeat in every panel as fixed references; the proposed
+    curve changes with b2. Panels share both axes so shapes are comparable.
+    """
+    n = schedules["plain"].n_requests
+    per = _arrivals_per_runtime(cfg, n)
+    bw = cfg.get_path("plots.kde_bandwidth", 0.4)
+    pts = int(cfg.get_path("plots.kde_grid_points", 400))
+    prop = schedules["proposed"]
+    Bs = sorted(prop.keys())
+    common = metrics.common_completed(
+        [schedules["plain"], schedules["naive"], *prop.values()])
+
+    arr, _, origin = per["plain"]
+    lat_plain = metrics.latency_ms(schedules["plain"], arr, common, origin)
+    arr, _, origin = per["naive"]
+    lat_naive = metrics.latency_ms(schedules["naive"], arr, common, origin)
+    arr, _, origin = per["proposed"]
+    lat_prop = {B: metrics.latency_ms(prop[B], arr, common, origin) for B in Bs}
+
+    all_l = [lat_plain, lat_naive, *lat_prop.values()]
+    lo = min(l.min() for l in all_l)
+    hi = max(np.percentile(l, 99.5) for l in all_l)
+    grid = np.linspace(lo, hi, pts)
+
+    fig, axes = plt.subplots(1, len(Bs), figsize=FIG_DOUBLE,
+                             sharex=True, sharey=True)
+    if len(Bs) == 1:
+        axes = [axes]
+    for ax, B in zip(axes, Bs):
+        for r, l in (("plain", lat_plain), ("naive", lat_naive),
+                     ("proposed", lat_prop[B])):
+            ax.plot(grid, _kde(l, grid, bw), color=RUNTIME_COLORS[r],
+                    linestyle=RUNTIME_STYLES[r]["linestyle"], linewidth=1.1)
+        ax.set_title(b2_label(B))
+        ax.xaxis.set_major_locator(MaxNLocator(3))
+    axes[0].set_ylabel("Density")
+    axes[len(axes) // 2].set_xlabel("Latency (ms)")
+    fig.suptitle("Latency Distribution")
+    handles = [Line2D([], [], color=RUNTIME_COLORS[r],
+                      linestyle=RUNTIME_STYLES[r]["linestyle"],
+                      label=RUNTIME_LABELS[r]) for r in RUNTIME_ORDER]
+    fig.legend(handles=handles, ncol=3, loc="outside lower center")
+    return _save(fig, cfg, "plot2b_latency_kde_sweep")
 
 
 def plot_latency_cdf(cfg: Config, schedules: dict):
@@ -455,6 +504,7 @@ def plot_naive_seg2_sizes(cfg: Config, schedules: dict):
 def plot_all(cfg: Config, schedules: dict):
     plot_slo_goodput(cfg, schedules)
     plot_latency_kde(cfg, schedules)
+    plot_latency_kde_sweep(cfg, schedules)
     plot_latency_cdf(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)

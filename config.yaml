@@ -28,7 +28,7 @@ early_exit:
                                                  # fixed across the SLO sweep
 
 batching:
-  seg1_batch: 32                                 # seg1 accumulation batch (all runtimes)
+  seg1_batch: 16                                 # seg1 accumulation batch (all runtimes)
   seg2_batch: 16                                 # proposed seg2 flush size (single-run default)
   seg2_batch_sweep: [4, 8, 16, 32]            # plot 1: one curve per seg2 batch size
   # proposed seg2 flush mode:
@@ -48,11 +48,11 @@ arrivals:
   #     naive: 1650
   #     proposed: 1700
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
-  lambda: 0
+  lambda: 1500
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
-    start: 1200.0
-    stop: 1800.0
+    start: 500.0
+    stop: 2000.0
     step: 5.0
   seed: 1234                                     # fixes arrival trace + request sampling
 
@@ -60,7 +60,7 @@ slo:
   # Latency SLO sweep for goodput plot (milliseconds)
   start_ms: 0
   stop_ms: 100
-  step_ms: 10
+  step_ms: 1
 
 metrics:
   # Goodput definition:
@@ -95,8 +95,8 @@ plots:
   # Plot 1 pair figures (SLO vs Goodput): one λ per comparison, applied to
   # BOTH runtimes in that figure (identical arrival trace). 0 = saturated.
   slo_goodput_lambda:
-    plain: 1400                                  # plot1a: Plain vs Proposed
-    naive: 1650                                  # plot1b: Naive vs Proposed
+    plain: 1600                                  # plot1a: Plain vs Proposed
+    naive: 1700                                  # plot1b: Naive vs Proposed
   # Latency KDE (plot2): bandwidth as a fraction of the data std
   # (scipy bw_method). Larger = smoother, smaller = spikier; null = Scott rule.
   kde_bandwidth: 0.4
