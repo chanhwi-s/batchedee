@@ -126,6 +126,20 @@ def capacity_lambda(sched: Schedule, common_ids: np.ndarray) -> float:
     return len(common_ids) / float(completion[common_ids].max())
 
 
+def knee_stats(sched: Schedule, lams: np.ndarray, common_ids: np.ndarray,
+               seed: int):
+    """Operating point at the mean-latency minimum of the λ sweep.
+
+    Returns (knee_lambda, mean_ms, p99_ms, at_sweep_edge). `at_sweep_edge` is
+    True when the minimum sits on the first/last grid point, i.e. the true
+    knee may lie outside the swept range.
+    """
+    means, p99s = load_latency_curves(sched, lams, common_ids, seed)
+    i = int(np.argmin(means))
+    return (float(lams[i]), float(means[i]), float(p99s[i]),
+            bool(i in (0, len(lams) - 1)))
+
+
 def knee_lambda(lams: np.ndarray, curve: np.ndarray):
     """λ at the response-time minimum — the knee (sweet spot) of the load curve.
 

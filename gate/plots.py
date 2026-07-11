@@ -197,17 +197,40 @@ def plot_latency_kde(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot2_latency_kde")
 
 
-def _sweep_latencies(cfg: Config, schedules: dict):
+def _sweep_latencies(cfg: Config, schedules: dict, at_knee: bool = False,
+                     tag: str = ""):
     """Per-runtime latencies for the b2-sweep panel figures: plain/naive as
     fixed references + proposed per seg2_batch, all on the shared common set.
-    Returns (lat_plain, lat_naive, {B: lat_proposed}, Bs)."""
+
+    at_knee=True replays EVERY configuration at its own knee λ (the arrival
+    rate minimizing its mean response time over lambda_sweep, see Table D)
+    instead of arrivals.lambda. Returns (lat_plain, lat_naive,
+    {B: lat_proposed}, Bs).
+    """
     n = schedules["plain"].n_requests
-    per = _arrivals_per_runtime(cfg, n)
     prop = schedules["proposed"]
     Bs = sorted(prop.keys())
     common = metrics.common_completed(
         [schedules["plain"], schedules["naive"], *prop.values()])
 
+    if at_knee:
+        lams = lambda_grid(cfg)
+        seed = int(cfg.arrivals.seed)
+
+        def knee_lat(s, label):
+            k, mean, _p99, edge = metrics.knee_stats(s, lams, common, seed)
+            note = "  [WARNING: knee on sweep edge]" if edge else ""
+            print(f"[{tag}] {label}: knee λ = {k:g} req/s "
+                  f"(mean {mean:.2f} ms){note}")
+            return metrics.latency_ms(s, poisson_arrivals(n, k, seed),
+                                      common, "arrival")
+
+        lat_plain = knee_lat(schedules["plain"], "Plain")
+        lat_naive = knee_lat(schedules["naive"], "Naive")
+        lat_prop = {B: knee_lat(prop[B], b2_label(B)) for B in Bs}
+        return lat_plain, lat_naive, lat_prop, Bs
+
+    per = _arrivals_per_runtime(cfg, n)
     arr, _, origin = per["plain"]
     lat_plain = metrics.latency_ms(schedules["plain"], arr, common, origin)
     arr, _, origin = per["naive"]
@@ -229,10 +252,13 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
 
     Plain/naive curves repeat in every panel as fixed references; the proposed
     curve changes with b2. Panels share both axes so shapes are comparable.
+    Each configuration is replayed at its OWN knee λ (minimum-mean-latency
+    operating point; logged to stdout — state these λ values in the caption).
     """
     bw = cfg.get_path("plots.kde_bandwidth", 0.4)
     pts = int(cfg.get_path("plots.kde_grid_points", 400))
-    lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(cfg, schedules)
+    lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(
+        cfg, schedules, at_knee=True, tag="plot2b")
 
     all_l = [lat_plain, lat_naive, *lat_prop.values()]
     lo = min(l.min() for l in all_l)

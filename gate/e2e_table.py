@@ -26,6 +26,12 @@ Table C (optional): same columns and the SAME fixed SLOs as Table B, but on
 the user-chosen λ values from `plots.slo_goodput_lambda` (the per-figure λ of
 plot1a/1b) — so the table matches the operating points shown in the SLO-vs-
 goodput figures. Non-positive (saturated) entries are skipped.
+
+Table D (knee operating points): for plain, naive, and proposed at EVERY
+seg2_batch in the sweep, the λ minimizing mean response time (the knee of the
+load curve) plus the mean/p99 latency at that point and the capacity-based
+divergence λ. Computed on the common set over ALL configurations. plot2b
+draws each latency distribution at these knee λ values.
 """
 from __future__ import annotations
 
@@ -149,6 +155,23 @@ def generate(cfg: Config, scheds: dict) -> dict:
     user_lams = sorted({float(v) for v in user_map.values() if float(v) > 0})
     table_c = _rows_at(user_lams)
 
+    # ---- Table D: knee operating point per configuration (incl. bs2 sweep) --
+    all_prop = scheds["proposed"]
+    common_all = metrics.common_completed(
+        [scheds["plain"], scheds["naive"], *all_prop.values()])
+    configs = ([("plain", scheds["plain"]), ("naive", scheds["naive"])]
+               + [(f"proposed(bs2={b})", all_prop[b]) for b in sorted(all_prop)])
+    table_d = []
+    for label, s in configs:
+        k, mean, p99, edge = metrics.knee_stats(s, lams, common_all, seed)
+        cap = metrics.capacity_lambda(s, common_all)
+        if edge:
+            notes.append(f"Table D: {label} knee sits on the sweep edge "
+                         f"({k:g}); extend lambda_sweep")
+        table_d.append({"config": label, "knee_lambda": k,
+                        "mean_ms": round(mean, 2), "p99_ms": round(p99, 2),
+                        "divergence_lambda": round(cap, 1)})
+
     # ---- sanity checks ----
     lam1 = chosen[0]
     g_plain = next(row for row in table_b
@@ -200,7 +223,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
         "sanity_checks": checks,
     }
     result = {"meta": meta, "table_a": table_a, "table_b": table_b,
-              "table_c": table_c}
+              "table_c": table_c, "table_d": table_d}
 
     d = cfg.paths["results_dir"]
     os.makedirs(d, exist_ok=True)
@@ -220,8 +243,9 @@ def generate(cfg: Config, scheds: dict) -> dict:
     _csv(os.path.join(d, "e2e_table_b.csv"), table_b)
     if table_c:
         _csv(os.path.join(d, "e2e_table_c.csv"), table_c)
+    _csv(os.path.join(d, "e2e_table_d.csv"), table_d)
 
-    _print_tables(table_a, table_b, meta, table_c)
+    _print_tables(table_a, table_b, meta, table_c, table_d)
     for p in written:
         print(f"[e2e] wrote {p}")
     return result
@@ -238,7 +262,7 @@ def _print_rows(rows):
               f"{row['goodput_slo_p99']:>10.1f} {str(row['diverged']):>9}")
 
 
-def _print_tables(table_a, table_b, meta, table_c=None):
+def _print_tables(table_a, table_b, meta, table_c=None, table_d=None):
     print("\n[e2e] Table A — λ-independent metrics")
     hdr = f"{'runtime':<10} {'acc(%)':>8} {'sat.thr(s/s)':>13} {'divλ(capacity)':>15}"
     print(hdr)
@@ -256,4 +280,15 @@ def _print_tables(table_a, table_b, meta, table_c=None):
         print(f"\n[e2e] Table C — user λ grid from plots.slo_goodput_lambda  "
               f"(same SLOs: {slo_desc})")
         _print_rows(table_c)
+
+    if table_d:
+        print("\n[e2e] Table D — knee operating points (λ at minimum mean latency)")
+        hdr = (f"{'config':<18} {'kneeλ':>8} {'mean(ms)':>9} {'p99(ms)':>9} "
+               f"{'divλ(capacity)':>15}")
+        print(hdr)
+        print("-" * len(hdr))
+        for row in table_d:
+            print(f"{row['config']:<18} {row['knee_lambda']:>8g} "
+                  f"{row['mean_ms']:>9.2f} {row['p99_ms']:>9.2f} "
+                  f"{row['divergence_lambda']:>15.1f}")
     print()
