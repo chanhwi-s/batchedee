@@ -97,7 +97,14 @@ plots:
   slo_goodput_lambda:
     plain: 1600                                  # plot1a: Plain vs Proposed
     naive: 1700                                  # plot1b: Naive vs Proposed
-  # Latency KDE (plot2): bandwidth as a fraction of the data std
+  # Latency KDE (plot2/plot2b): bandwidth as a fraction of the data std
   # (scipy bw_method). Larger = smoother, smaller = spikier; null = Scott rule.
   kde_bandwidth: 0.4
   kde_grid_points: 400                           # x-resolution of the KDE curve
+  # KDE x-axis upper bound — lower these when a long tail (e.g. proposed at
+  # b2=32) squeezes the bulk of the distribution to the left:
+  #   kde_xlim_ms: fixed cutoff in ms (takes precedence; null = disabled)
+  #   kde_clip_percentile: percentile of plotted latencies (99.5 = old behavior)
+  # If clipped, state "tail truncated at X ms" in the figure caption.
+  kde_xlim_ms: null
+  kde_clip_percentile: 99.5

@@ -162,12 +162,28 @@ def _per_runtime_latencies(cfg: Config, schedules: dict):
     return data
 
 
+def _kde_hi(cfg: Config, lats: list, name: str) -> float:
+    """Upper x-bound for the KDE plots. `plots.kde_xlim_ms` (fixed cutoff)
+    takes precedence; otherwise `plots.kde_clip_percentile` of the plotted
+    latencies (99.5 = legacy behavior). Lower either to keep a long tail from
+    squeezing the bulk of the distribution."""
+    xlim = cfg.get_path("plots.kde_xlim_ms", None)
+    if xlim:
+        hi = float(xlim)
+        print(f"[{name}] x-range clipped at fixed {hi:g} ms (plots.kde_xlim_ms)")
+        return hi
+    pct = float(cfg.get_path("plots.kde_clip_percentile", 99.5))
+    hi = max(float(np.percentile(l, pct)) for l in lats)
+    print(f"[{name}] x-range 0–{hi:.1f} ms (p{pct:g} of plotted latencies)")
+    return hi
+
+
 def plot_latency_kde(cfg: Config, schedules: dict):
     """Plot 2: KDE of per-sample latency per runtime."""
     data = _per_runtime_latencies(cfg, schedules)
     bw = cfg.get_path("plots.kde_bandwidth", 0.4)
     lo = min(l.min() for _, l in data)
-    hi = max(np.percentile(l, 99.5) for _, l in data)
+    hi = _kde_hi(cfg, [l for _, l in data], "plot2")
     grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -205,7 +221,7 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
 
     all_l = [lat_plain, lat_naive, *lat_prop.values()]
     lo = min(l.min() for l in all_l)
-    hi = max(np.percentile(l, 99.5) for l in all_l)
+    hi = _kde_hi(cfg, all_l, "plot2b")
     grid = np.linspace(lo, hi, pts)
 
     fig, axes = plt.subplots(1, len(Bs), figsize=FIG_DOUBLE,
