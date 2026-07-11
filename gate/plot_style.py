@@ -118,4 +118,4 @@ def proposed_shades(n: int):
 
 
 def b2_label(B: int) -> str:
-    return f"$b_2 = {B}$"
+    return f"$bs_2 = {B}$"

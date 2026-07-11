@@ -95,7 +95,7 @@ def _arrivals_per_runtime(cfg: Config, n: int):
 
 
 # --------------------------------------------------------------------------- #
-# Plot 1a/1b: SLO vs Goodput — proposed (b2 sweep) vs ONE baseline per figure
+# Plot 1a/1b: Goodput under Latency SLOs — proposed (b2 sweep) vs ONE baseline per figure
 # --------------------------------------------------------------------------- #
 def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
     """One SLO-vs-goodput figure: `baseline` + the proposed b2 sweep, BOTH
@@ -120,7 +120,7 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     ax.plot(slo, metrics.goodput_vs_slo(schedules[baseline], arr, common, slo, mode, origin),
             color=RUNTIME_COLORS[baseline], label=RUNTIME_LABELS[baseline],
-            markevery=3, **RUNTIME_STYLES[baseline])
+            linestyle=RUNTIME_STYLES[baseline]["linestyle"])
     shades = proposed_shades(len(prop))
     for c, (B, sched) in zip(shades, sorted(prop.items())):
         ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode, origin),
@@ -128,7 +128,7 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
 
     ax.set_xlabel("SLO (ms)")
     ax.set_ylabel("Goodput (samples/s)")
-    ax.set_title("SLO vs Goodput")
+    ax.set_title("Goodput under Latency SLOs")
     ax.legend(ncol=2, loc="lower right")
     return _save(fig, cfg, name)
 
@@ -239,7 +239,12 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
     hi = _kde_hi(cfg, all_l, "plot2b")
     grid = np.linspace(lo, hi, pts)
 
-    fig, axes = plt.subplots(1, len(Bs), figsize=FIG_DOUBLE,
+    # figure height follows the panel count so each panel keeps roughly the
+    # single-figure (FIG_SINGLE) aspect ratio; the constant covers suptitle,
+    # panel titles, xlabel, and the outside legend.
+    w = FIG_DOUBLE[0]
+    h = w / max(len(Bs), 1) * (FIG_SINGLE[1] / FIG_SINGLE[0]) + 0.95
+    fig, axes = plt.subplots(1, len(Bs), figsize=(w, h),
                              sharex=True, sharey=True)
     if len(Bs) == 1:
         axes = [axes]
