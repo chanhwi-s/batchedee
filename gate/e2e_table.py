@@ -19,6 +19,11 @@ capacity-based divergence points:
 Collisions collapse to the distinct achievable subset (recorded in meta).
 The two SLOs are plain's mean / p99 response time at λ1, rounded to the
 nearest 10 ms, then held fixed across all rows.
+
+Table C (optional): same columns and the SAME fixed SLOs as Table B, but on
+the user-chosen λ values from `plots.slo_goodput_lambda` (the per-figure λ of
+plot1a/1b) — so the table matches the operating points shown in the SLO-vs-
+goodput figures. Non-positive (saturated) entries are skipped.
 """
 from __future__ import annotations
 
@@ -114,23 +119,32 @@ def generate(cfg: Config, scheds: dict) -> dict:
     raw_mean, raw_p99 = metrics.response_stats(entries["plain"], arr1, common)
     slo_avg, slo_p99 = _round10(raw_mean), _round10(raw_p99)
 
-    # ---- Table B rows ----
+    # ---- Table B / C rows (same columns, same fixed SLOs) ----
     slo_grid = np.array([slo_avg, slo_p99], dtype=float)
-    table_b = []
     throughputs = {}                      # (runtime, λ) -> completed throughput
-    for lam in chosen:
-        arr = poisson_arrivals(n, lam, seed)
-        for r, s in entries.items():
-            mean, p99 = metrics.response_stats(s, arr, common)
-            g = metrics.goodput_vs_slo(s, arr, common, slo_grid, "wallclock")
-            completion, _ = simulate(s, arr)
-            throughputs[(r, lam)] = len(common) / metrics.wallclock(completion, arr, common)
-            diverged = lam >= div[r]                  # arrival rate ≥ capacity
-            table_b.append({"runtime": r, "lambda": lam,
-                            "avg_ms": round(mean, 2), "p99_ms": round(p99, 2),
-                            "goodput_slo_avg": round(float(g[0]), 1),
-                            "goodput_slo_p99": round(float(g[1]), 1),
-                            "diverged": bool(diverged)})
+
+    def _rows_at(lam_values: list[float]) -> list[dict]:
+        rows = []
+        for lam in lam_values:
+            arr = poisson_arrivals(n, lam, seed)
+            for r, s in entries.items():
+                mean, p99 = metrics.response_stats(s, arr, common)
+                g = metrics.goodput_vs_slo(s, arr, common, slo_grid, "wallclock")
+                completion, _ = simulate(s, arr)
+                throughputs[(r, lam)] = len(common) / metrics.wallclock(completion, arr, common)
+                rows.append({"runtime": r, "lambda": lam,
+                             "avg_ms": round(mean, 2), "p99_ms": round(p99, 2),
+                             "goodput_slo_avg": round(float(g[0]), 1),
+                             "goodput_slo_p99": round(float(g[1]), 1),
+                             "diverged": bool(lam >= div[r])})   # λ ≥ capacity
+        return rows
+
+    table_b = _rows_at(chosen)
+
+    # ---- Table C: user-configured λ values (plots.slo_goodput_lambda) ----
+    user_map = dict(cfg.get_path("plots.slo_goodput_lambda", {}) or {})
+    user_lams = sorted({float(v) for v in user_map.values() if float(v) > 0})
+    table_c = _rows_at(user_lams)
 
     # ---- sanity checks ----
     lam1 = chosen[0]
@@ -178,33 +192,50 @@ def generate(cfg: Config, scheds: dict) -> dict:
         "lambda_selection": {"raw": raw, "chosen": chosen, "notes": notes},
         "slo": {"raw_mean_ms": round(raw_mean, 3), "raw_p99_ms": round(raw_p99, 3),
                 "slo_avg_ms": slo_avg, "slo_p99_ms": slo_p99},
+        "user_lambda_table": {"source": "plots.slo_goodput_lambda",
+                              "configured": user_map, "values_used": user_lams},
         "sanity_checks": checks,
     }
-    result = {"meta": meta, "table_a": table_a, "table_b": table_b}
+    result = {"meta": meta, "table_a": table_a, "table_b": table_b,
+              "table_c": table_c}
 
     d = cfg.paths["results_dir"]
     os.makedirs(d, exist_ok=True)
     jpath = os.path.join(d, "e2e_table.json")
     with open(jpath, "w") as f:
         json.dump(result, f, indent=2, default=float)
-    apath = os.path.join(d, "e2e_table_a.csv")
-    with open(apath, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(table_a[0].keys()))
-        w.writeheader()
-        w.writerows(table_a)
-    bpath = os.path.join(d, "e2e_table_b.csv")
-    with open(bpath, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(table_b[0].keys()))
-        w.writeheader()
-        w.writerows(table_b)
+    written = [jpath]
 
-    _print_tables(table_a, table_b, meta)
-    for p in (jpath, apath, bpath):
+    def _csv(path, rows):
+        with open(path, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+        written.append(path)
+
+    _csv(os.path.join(d, "e2e_table_a.csv"), table_a)
+    _csv(os.path.join(d, "e2e_table_b.csv"), table_b)
+    if table_c:
+        _csv(os.path.join(d, "e2e_table_c.csv"), table_c)
+
+    _print_tables(table_a, table_b, meta, table_c)
+    for p in written:
         print(f"[e2e] wrote {p}")
     return result
 
 
-def _print_tables(table_a, table_b, meta):
+def _print_rows(rows):
+    hdr = (f"{'runtime':<10} {'λ':>7} {'avg(ms)':>9} {'p99(ms)':>9} "
+           f"{'gp@SLOavg':>10} {'gp@SLOp99':>10} {'diverged':>9}")
+    print(hdr)
+    print("-" * len(hdr))
+    for row in rows:
+        print(f"{row['runtime']:<10} {row['lambda']:>7g} {row['avg_ms']:>9.2f} "
+              f"{row['p99_ms']:>9.2f} {row['goodput_slo_avg']:>10.1f} "
+              f"{row['goodput_slo_p99']:>10.1f} {str(row['diverged']):>9}")
+
+
+def _print_tables(table_a, table_b, meta, table_c=None):
     print("\n[e2e] Table A — λ-independent metrics")
     hdr = f"{'runtime':<10} {'acc(%)':>8} {'sat.thr(s/s)':>13} {'divλ(capacity)':>15}"
     print(hdr)
@@ -215,14 +246,11 @@ def _print_tables(table_a, table_b, meta):
               f"{row['divergence_lambda']:>15.1f}")
 
     slo = meta["slo"]
-    print(f"\n[e2e] Table B — common-λ grid  "
-          f"(SLO_avg={slo['slo_avg_ms']} ms, SLO_p99={slo['slo_p99_ms']} ms)")
-    hdr = (f"{'runtime':<10} {'λ':>7} {'avg(ms)':>9} {'p99(ms)':>9} "
-           f"{'gp@SLOavg':>10} {'gp@SLOp99':>10} {'diverged':>9}")
-    print(hdr)
-    print("-" * len(hdr))
-    for row in table_b:
-        print(f"{row['runtime']:<10} {row['lambda']:>7g} {row['avg_ms']:>9.2f} "
-              f"{row['p99_ms']:>9.2f} {row['goodput_slo_avg']:>10.1f} "
-              f"{row['goodput_slo_p99']:>10.1f} {str(row['diverged']):>9}")
+    slo_desc = f"SLO_avg={slo['slo_avg_ms']} ms, SLO_p99={slo['slo_p99_ms']} ms"
+    print(f"\n[e2e] Table B — auto-derived λ grid  ({slo_desc})")
+    _print_rows(table_b)
+    if table_c:
+        print(f"\n[e2e] Table C — user λ grid from plots.slo_goodput_lambda  "
+              f"(same SLOs: {slo_desc})")
+        _print_rows(table_c)
     print()
