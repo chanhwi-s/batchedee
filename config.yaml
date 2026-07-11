@@ -97,3 +97,7 @@ plots:
   slo_goodput_lambda:
     plain: 1400                                  # plot1a: Plain vs Proposed
     naive: 1650                                  # plot1b: Naive vs Proposed
+  # Latency KDE (plot2): bandwidth as a fraction of the data std
+  # (scipy bw_method). Larger = smoother, smaller = spikier; null = Scott rule.
+  kde_bandwidth: 0.4
+  kde_grid_points: 400                           # x-resolution of the KDE curve

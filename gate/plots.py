@@ -39,21 +39,23 @@ def _save(fig, cfg: Config, name: str):
     return png, pdf
 
 
-def _kde(data: np.ndarray, grid: np.ndarray) -> np.ndarray:
+def _kde(data: np.ndarray, grid: np.ndarray, bw=None) -> np.ndarray:
+    """Gaussian KDE. `bw` = bandwidth as a fraction of the data std (scipy's
+    numeric bw_method semantics); None -> Scott's rule. Larger = smoother."""
     data = data[np.isfinite(data)]
     if len(data) < 2 or np.std(data) == 0:
         return np.zeros_like(grid)
     try:
         from scipy.stats import gaussian_kde
-        return gaussian_kde(data, bw_method=0.4)(grid)
+        return gaussian_kde(data, bw_method=bw)(grid)
     except Exception:
-        # Silverman-bandwidth Gaussian KDE fallback (no scipy).
+        # Gaussian KDE fallback (no scipy); Silverman factor when bw is None.
         n = len(data)
-        bw = 1.06 * np.std(data) * n ** (-1 / 5)
-        bw = max(bw, 1e-6)
-        u = (grid[:, None] - data[None, :]) / bw
+        factor = float(bw) if bw is not None else 1.06 * n ** (-1 / 5)
+        bw_abs = max(factor * np.std(data), 1e-6)
+        u = (grid[:, None] - data[None, :]) / bw_abs
         k = np.exp(-0.5 * u ** 2) / np.sqrt(2 * np.pi)
-        return k.sum(axis=1) / (n * bw)
+        return k.sum(axis=1) / (n * bw_abs)
 
 
 def _runtime_lambda(cfg: Config, runtime: str) -> float:
@@ -162,13 +164,14 @@ def _per_runtime_latencies(cfg: Config, schedules: dict):
 def plot_latency_kde(cfg: Config, schedules: dict):
     """Plot 2: KDE of per-sample latency per runtime."""
     data = _per_runtime_latencies(cfg, schedules)
+    bw = cfg.get_path("plots.kde_bandwidth", 0.4)
     lo = min(l.min() for _, l in data)
     hi = max(np.percentile(l, 99.5) for _, l in data)
-    grid = np.linspace(lo, hi, 400)
+    grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     for r, l in data:
-        ax.plot(grid, _kde(l, grid), color=RUNTIME_COLORS[r],
+        ax.plot(grid, _kde(l, grid, bw), color=RUNTIME_COLORS[r],
                 linestyle=RUNTIME_STYLES[r]["linestyle"], label=RUNTIME_LABELS[r])
     ax.set_xlabel("Latency (ms)")
     ax.set_ylabel("Density")
