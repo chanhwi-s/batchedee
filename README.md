@@ -66,12 +66,14 @@ Outputs:
 - Schedules (pickled) → `artifacts/results/schedules.pkl` (ops + measured
   service times, op stats, per-sample top-1 correctness for accuracy)
 - End-to-end tables → `artifacts/results/e2e_table.json`, `e2e_table_a.csv`,
-  `e2e_table_b.csv`. Table A: accuracy / saturated throughput (λ=0) /
-  divergence λ per runtime (capacity-based: divergence λ = the runtime's
-  service capacity, above which the queue grows without bound). Table B: mean
-  & p99 response time and goodput at two fixed SLOs, on three λ values derived
-  deterministically from the capacity points (derivation recorded in the JSON
-  `meta` block; built-in sanity checks print PASS/FAIL).
+  `e2e_table_b.csv`, `e2e_table_c.csv`. Table A: accuracy / saturated
+  throughput (λ=0) / divergence λ per runtime (capacity-based: divergence λ =
+  the runtime's service capacity, above which the queue grows without bound).
+  Table B: mean & p99 response time and goodput at two fixed SLOs, on three λ
+  values derived deterministically from the capacity points (λ1/λ2/λ3;
+  derivation recorded in the JSON `meta` block). Table C: same columns and
+  SLOs on the user-chosen λ values from `plots.slo_goodput_lambda`. Built-in
+  sanity checks print PASS/FAIL.
 - Figures (png + pdf) → `artifacts/plots/`
   1. `plot1a_slo_goodput_vs_plain` / `plot1b_slo_goodput_vs_naive` — SLO vs
      goodput pair figures: the proposed `seg2_batch` sweep vs ONE baseline
@@ -85,24 +87,31 @@ Outputs:
   benchmark each runtime at its own sustainable load (e.g. read off the
   load-vs-latency plot); labels then show each runtime's λ. The λ-sweep figures
   (load vs latency, breakdown) always use `arrivals.lambda_sweep`.
-  2. `plot2_latency_kde` — KDE of per-sample latency per runtime.
-  3. `plot3_latency_cdf` — empirical CDF of per-sample latency per runtime.
-  4. `plot4_load_latency` — mean response time vs λ per runtime; also prints
+  2. `plot2_latency_kde` — KDE of per-sample latency per runtime
+     (`plots.kde_bandwidth` / `kde_grid_points`; x-axis clipped via
+     `plots.kde_xlim_ms` or `kde_clip_percentile` when a long tail squeezes
+     the bulk).
+  3. `plot2b_latency_kde_sweep` — same KDE, one panel per `seg2_batch` in the
+     sweep (plain/naive repeated as references), horizontally concatenated.
+  4. `plot3_latency_cdf` — empirical CDF of per-sample latency per runtime.
+  5. `plot3b_latency_cdf_sweep` — single-axes CDF: plain + naive + the whole
+     proposed b2 sweep as sequential shades.
+  6. `plot4_load_latency` — mean response time vs λ per runtime; also prints
      each runtime's capacity-based divergence λ (+ knee for reference) and
      records it in the pkl (`schedules['divergence']`).
-  5. `plot5/6` — per-component latency decomposition vs λ (formation wait /
+  7. `plot5/6` — per-component latency decomposition vs λ (formation wait /
      GPU wait / stage-1 compute / stage-2 queue wait / stage-2 compute).
-  6. `plot7_timeline` — GPU execution timeline per runtime on the simulation
+  8. `plot7_timeline` — GPU execution timeline per runtime on the simulation
      clock: one contiguous bar colored by state (arrival wait / seg1 or whole /
      seg2). `plots.timeline_xlim_ms` clips the x-axis for zooming; works in both
      seg2 flush modes.
-  7. `plot8_exec_stats` — per-runtime bars: mean measured service time per op
+  9. `plot8_exec_stats` — per-runtime bars: mean measured service time per op
      and op count, split by stage (seg1/whole vs seg2). The same numbers are
      printed by `run.py run` and stored in the pkl under
      `schedules['op_stats']`.
-  8. `plot9_naive_seg2_sizes` — histogram of naive's dynamic seg2 batch sizes
+  10. `plot9_naive_seg2_sizes` — histogram of naive's dynamic seg2 batch sizes
      (per-batch non-exit counts); summary stats printed to stdout.
-  9. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
+  11. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).
 
