@@ -92,26 +92,32 @@ def _arrivals_per_runtime(cfg: Config, n: int):
 
 
 # --------------------------------------------------------------------------- #
-# Plot 1: SLO vs Goodput
+# Plot 1a/1b: SLO vs Goodput — proposed (b2 sweep) vs ONE baseline per figure
 # --------------------------------------------------------------------------- #
-def plot_slo_goodput(cfg: Config, schedules: dict):
-    """Plot 1: SLO vs Goodput, one curve per seg2_batch + plain + naive."""
+def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
+    """One SLO-vs-goodput figure: `baseline` + the proposed b2 sweep, BOTH
+    replayed on the same arrival trace at the figure's λ
+    (plots.slo_goodput_lambda.<baseline>; 0 or missing = saturated)."""
     n = schedules["plain"].n_requests
-    per = _arrivals_per_runtime(cfg, n)
+    lam = float(cfg.get_path(f"plots.slo_goodput_lambda.{baseline}", 0) or 0)
+    if lam <= 0:
+        arr, origin, desc = np.zeros(n, dtype=float), "stage1_start", "saturated"
+    else:
+        arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
+                             "arrival", f"λ={lam:g} req/s")
+    print(f"[{name}] {RUNTIME_LABELS[baseline]} vs Proposed at {desc}")
     slo = slo_grid_ms(cfg)
 
     prop = schedules["proposed"]  # {B: Schedule}
+    # common set over ALL runtimes so both figures share the same sample base
     all_scheds = [schedules["plain"], schedules["naive"], *prop.values()]
     common = metrics.common_completed(all_scheds)
     mode = cfg.get_path("metrics.goodput_mode", "mean_throughput")
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    for r in ("plain", "naive"):
-        arr, _, origin = per[r]
-        ax.plot(slo, metrics.goodput_vs_slo(schedules[r], arr, common, slo, mode, origin),
-                color=RUNTIME_COLORS[r], label=RUNTIME_LABELS[r],
-                markevery=3, **RUNTIME_STYLES[r])
-    arr, _, origin = per["proposed"]
+    ax.plot(slo, metrics.goodput_vs_slo(schedules[baseline], arr, common, slo, mode, origin),
+            color=RUNTIME_COLORS[baseline], label=RUNTIME_LABELS[baseline],
+            markevery=3, **RUNTIME_STYLES[baseline])
     shades = proposed_shades(len(prop))
     for c, (B, sched) in zip(shades, sorted(prop.items())):
         ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode, origin),
@@ -121,7 +127,15 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
     ax.set_ylabel("Goodput (samples/s)")
     ax.set_title("SLO vs Goodput")
     ax.legend(ncol=2, loc="lower right")
-    return _save(fig, cfg, "plot1_slo_goodput")
+    return _save(fig, cfg, name)
+
+
+def plot_slo_goodput(cfg: Config, schedules: dict):
+    """Plot 1a: Plain vs Proposed; Plot 1b: Naive vs Proposed — each at its
+    own configured λ (identical trace within a figure)."""
+    a = _slo_goodput_pair(cfg, schedules, "plain", "plot1a_slo_goodput_vs_plain")
+    b = _slo_goodput_pair(cfg, schedules, "naive", "plot1b_slo_goodput_vs_naive")
+    return a, b
 
 
 # --------------------------------------------------------------------------- #

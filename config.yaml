@@ -92,3 +92,8 @@ plots:
   format: "png"
   # Timeline plot (plot7): clip the x-axis to the first N ms (null = full run).
   timeline_xlim_ms: null
+  # Plot 1 pair figures (SLO vs Goodput): one λ per comparison, applied to
+  # BOTH runtimes in that figure (identical arrival trace). 0 = saturated.
+  slo_goodput_lambda:
+    plain: 1400                                  # plot1a: Plain vs Proposed
+    naive: 1650                                  # plot1b: Naive vs Proposed

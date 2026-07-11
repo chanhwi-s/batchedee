@@ -55,6 +55,7 @@ python run.py export      # export + cache all ONNX graphs
 python run.py run         # GPU pass: measure service times + accuracy, build schedules
 python run.py plot        # render the figures
 python run.py e2e         # end-to-end comparison tables (Table A/B, json + csv)
+python run.py seg1bench   # seg1 kernel-time sweep over batch sizes 1..512 (plot10)
 # or the whole pipeline:
 python run.py all
 ```
@@ -72,8 +73,10 @@ Outputs:
   deterministically from the capacity points (derivation recorded in the JSON
   `meta` block; built-in sanity checks print PASS/FAIL).
 - Figures (png + pdf) → `artifacts/plots/`
-  1. `plot1_slo_goodput` — SLO 0–200 ms vs goodput; one curve per `seg2_batch` in
-     `{2,4,8,16,32}`, plus `plain` and `naive`.
+  1. `plot1a_slo_goodput_vs_plain` / `plot1b_slo_goodput_vs_naive` — SLO vs
+     goodput pair figures: the proposed `seg2_batch` sweep vs ONE baseline
+     each, both replayed on the same arrival trace at that figure's λ
+     (`plots.slo_goodput_lambda.{plain,naive}`; 0 = saturated).
 
   All single-λ figures (goodput, KDE, CDF, timeline) share `arrivals.lambda`:
   `0` disables Poisson modeling entirely (all requests queued at t=0, saturated
@@ -84,15 +87,24 @@ Outputs:
   (load vs latency, breakdown) always use `arrivals.lambda_sweep`.
   2. `plot2_latency_kde` — KDE of per-sample latency per runtime.
   3. `plot3_latency_cdf` — empirical CDF of per-sample latency per runtime.
-  4. `plot4_load_latency` — response time (mean **and** p99) vs λ per runtime.
-  5. `plot7_timeline` — GPU execution timeline per runtime on the simulation
+  4. `plot4_load_latency` — mean response time vs λ per runtime; also prints
+     each runtime's capacity-based divergence λ (+ knee for reference) and
+     records it in the pkl (`schedules['divergence']`).
+  5. `plot5/6` — per-component latency decomposition vs λ (formation wait /
+     GPU wait / stage-1 compute / stage-2 queue wait / stage-2 compute).
+  6. `plot7_timeline` — GPU execution timeline per runtime on the simulation
      clock: one contiguous bar colored by state (arrival wait / seg1 or whole /
      seg2). `plots.timeline_xlim_ms` clips the x-axis for zooming; works in both
      seg2 flush modes.
-  6. `plot8_exec_stats` — per-runtime bars: mean measured service time per op
+  7. `plot8_exec_stats` — per-runtime bars: mean measured service time per op
      and op count, split by stage (seg1/whole vs seg2). The same numbers are
      printed by `run.py run` and stored in the pkl under
      `schedules['op_stats']`.
+  8. `plot9_naive_seg2_sizes` — histogram of naive's dynamic seg2 batch sizes
+     (per-batch non-exit counts); summary stats printed to stdout.
+  9. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
+     1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
+     `artifacts/results/seg1_batch_sweep.json`).
 
 ## Methodology notes
 

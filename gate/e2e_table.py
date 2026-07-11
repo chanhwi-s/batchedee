@@ -11,14 +11,14 @@ Table A (λ-independent, one row per runtime):
   diverges. The sweep-curve knee (latency minimum) is kept in meta as
   reference only — it is the sweet spot, not the instability point.
 
-Table B (runtime × λ grid): the three λ values are derived deterministically
-from the capacity-based divergence points D_plain/D_naive/D_proposed:
-  λ1 = D_plain − step, λ2 = grid-snapped midpoint(D_plain, D_naive),
-  λ3 = D_proposed − step; collisions collapse to the distinct achievable
-subset (recorded in meta). A fine sweep step (e.g. 10) keeps λ3 above the
-naive capacity so that only proposed is stable there. The two SLOs are
-plain's mean / p99 response time at λ1, rounded to the nearest 10 ms, then
-held fixed across all rows.
+Table B (runtime × λ grid): two λ values derived deterministically from the
+capacity-based divergence points:
+  λ1 = D_plain − step     (below every capacity: all three stable)
+  λ3 = D_proposed − step  (with a fine sweep step this lies above D_naive:
+                           only proposed is stable)
+Collisions collapse to the distinct achievable subset (recorded in meta).
+The two SLOs are plain's mean / p99 response time at λ1, rounded to the
+nearest 10 ms, then held fixed across all rows.
 """
 from __future__ import annotations
 
@@ -95,14 +95,13 @@ def generate(cfg: Config, scheds: dict) -> dict:
     # ---- Table B: deterministic λ1/λ2/λ3 from the divergence points ----
     D = {r: div[r] for r in RUNTIMES}
     raw = {"lambda1": _snap(lams, D["plain"] - step),
-           "lambda2": _snap(lams, (D["plain"] + D["naive"]) / 2.0),
            "lambda3": _snap(lams, D["proposed"] - step)}
     if raw["lambda1"] < lams[0]:
         raw["lambda1"] = float(lams[0])
         notes.append("λ1 clamped to sweep start")
 
     chosen: list[float] = []
-    for name in ("lambda1", "lambda2", "lambda3"):
+    for name in ("lambda1", "lambda3"):
         v = raw[name]
         if chosen and v <= chosen[-1]:
             notes.append(f"{name}={v:g} does not exceed the previous λ "
