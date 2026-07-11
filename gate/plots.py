@@ -258,30 +258,29 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
 
 
 def plot_latency_cdf_sweep(cfg: Config, schedules: dict):
-    """Plot 3b: latency CDF per runtime, one panel per seg2_batch in the sweep.
+    """Plot 3b: one CDF figure with plain, naive, AND the whole proposed
+    b2 sweep (sequential shades, light -> dark as b2 grows).
 
-    Same layout as plot2b; CDFs handle long tails without distortion, so no
-    x-clipping is applied.
+    CDFs handle long tails without distortion, so no x-clipping is applied.
     """
     lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(cfg, schedules)
 
-    fig, axes = plt.subplots(1, len(Bs), figsize=FIG_DOUBLE,
-                             sharex=True, sharey=True)
-    if len(Bs) == 1:
-        axes = [axes]
-    for ax, B in zip(axes, Bs):
-        for r, l in (("plain", lat_plain), ("naive", lat_naive),
-                     ("proposed", lat_prop[B])):
-            l = np.sort(l)
-            y = np.arange(1, len(l) + 1) / len(l)
-            ax.plot(l, y, color=RUNTIME_COLORS[r],
-                    linestyle=RUNTIME_STYLES[r]["linestyle"], linewidth=1.1)
-        ax.set_title(b2_label(B))
-        ax.xaxis.set_major_locator(MaxNLocator(3))
-    axes[0].set_ylabel("CDF")
-    axes[len(axes) // 2].set_xlabel("Latency (ms)")
-    fig.suptitle("Latency CDF")
-    _runtime_legend(fig)
+    def _cdf(ax, l, **kw):
+        l = np.sort(l)
+        ax.plot(l, np.arange(1, len(l) + 1) / len(l), **kw)
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    for r, l in (("plain", lat_plain), ("naive", lat_naive)):
+        _cdf(ax, l, color=RUNTIME_COLORS[r],
+             linestyle=RUNTIME_STYLES[r]["linestyle"], label=RUNTIME_LABELS[r])
+    shades = proposed_shades(len(Bs))
+    for c, B in zip(shades, Bs):
+        _cdf(ax, lat_prop[B], color=c, linestyle="-", linewidth=1.1,
+             label=b2_label(B))
+    ax.set_xlabel("Latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.set_title("Latency CDF")
+    ax.legend(ncol=2, loc="lower right")
     return _save(fig, cfg, "plot3b_latency_cdf_sweep")
 
 
