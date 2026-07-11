@@ -197,16 +197,12 @@ def plot_latency_kde(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot2_latency_kde")
 
 
-def plot_latency_kde_sweep(cfg: Config, schedules: dict):
-    """Plot 2b: latency KDE per runtime, one panel per seg2_batch in the sweep.
-
-    Plain/naive curves repeat in every panel as fixed references; the proposed
-    curve changes with b2. Panels share both axes so shapes are comparable.
-    """
+def _sweep_latencies(cfg: Config, schedules: dict):
+    """Per-runtime latencies for the b2-sweep panel figures: plain/naive as
+    fixed references + proposed per seg2_batch, all on the shared common set.
+    Returns (lat_plain, lat_naive, {B: lat_proposed}, Bs)."""
     n = schedules["plain"].n_requests
     per = _arrivals_per_runtime(cfg, n)
-    bw = cfg.get_path("plots.kde_bandwidth", 0.4)
-    pts = int(cfg.get_path("plots.kde_grid_points", 400))
     prop = schedules["proposed"]
     Bs = sorted(prop.keys())
     common = metrics.common_completed(
@@ -218,6 +214,25 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
     lat_naive = metrics.latency_ms(schedules["naive"], arr, common, origin)
     arr, _, origin = per["proposed"]
     lat_prop = {B: metrics.latency_ms(prop[B], arr, common, origin) for B in Bs}
+    return lat_plain, lat_naive, lat_prop, Bs
+
+
+def _runtime_legend(fig):
+    handles = [Line2D([], [], color=RUNTIME_COLORS[r],
+                      linestyle=RUNTIME_STYLES[r]["linestyle"],
+                      label=RUNTIME_LABELS[r]) for r in RUNTIME_ORDER]
+    fig.legend(handles=handles, ncol=3, loc="outside lower center")
+
+
+def plot_latency_kde_sweep(cfg: Config, schedules: dict):
+    """Plot 2b: latency KDE per runtime, one panel per seg2_batch in the sweep.
+
+    Plain/naive curves repeat in every panel as fixed references; the proposed
+    curve changes with b2. Panels share both axes so shapes are comparable.
+    """
+    bw = cfg.get_path("plots.kde_bandwidth", 0.4)
+    pts = int(cfg.get_path("plots.kde_grid_points", 400))
+    lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(cfg, schedules)
 
     all_l = [lat_plain, lat_naive, *lat_prop.values()]
     lo = min(l.min() for l in all_l)
@@ -238,11 +253,36 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
     axes[0].set_ylabel("Density")
     axes[len(axes) // 2].set_xlabel("Latency (ms)")
     fig.suptitle("Latency Distribution")
-    handles = [Line2D([], [], color=RUNTIME_COLORS[r],
-                      linestyle=RUNTIME_STYLES[r]["linestyle"],
-                      label=RUNTIME_LABELS[r]) for r in RUNTIME_ORDER]
-    fig.legend(handles=handles, ncol=3, loc="outside lower center")
+    _runtime_legend(fig)
     return _save(fig, cfg, "plot2b_latency_kde_sweep")
+
+
+def plot_latency_cdf_sweep(cfg: Config, schedules: dict):
+    """Plot 3b: latency CDF per runtime, one panel per seg2_batch in the sweep.
+
+    Same layout as plot2b; CDFs handle long tails without distortion, so no
+    x-clipping is applied.
+    """
+    lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(cfg, schedules)
+
+    fig, axes = plt.subplots(1, len(Bs), figsize=FIG_DOUBLE,
+                             sharex=True, sharey=True)
+    if len(Bs) == 1:
+        axes = [axes]
+    for ax, B in zip(axes, Bs):
+        for r, l in (("plain", lat_plain), ("naive", lat_naive),
+                     ("proposed", lat_prop[B])):
+            l = np.sort(l)
+            y = np.arange(1, len(l) + 1) / len(l)
+            ax.plot(l, y, color=RUNTIME_COLORS[r],
+                    linestyle=RUNTIME_STYLES[r]["linestyle"], linewidth=1.1)
+        ax.set_title(b2_label(B))
+        ax.xaxis.set_major_locator(MaxNLocator(3))
+    axes[0].set_ylabel("CDF")
+    axes[len(axes) // 2].set_xlabel("Latency (ms)")
+    fig.suptitle("Latency CDF")
+    _runtime_legend(fig)
+    return _save(fig, cfg, "plot3b_latency_cdf_sweep")
 
 
 def plot_latency_cdf(cfg: Config, schedules: dict):
@@ -522,6 +562,7 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_kde(cfg, schedules)
     plot_latency_kde_sweep(cfg, schedules)
     plot_latency_cdf(cfg, schedules)
+    plot_latency_cdf_sweep(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
