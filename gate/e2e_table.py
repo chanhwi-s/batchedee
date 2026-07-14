@@ -124,9 +124,11 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int]):
     from .plots import _save
     import matplotlib.pyplot as plt
 
-    x = np.arange(len(slo_values))
+    n_slo = len(slo_values)
+    x = np.arange(n_slo)
     w = 0.26
-    fig, ax = plt.subplots(figsize=ps.FIG_SINGLE)
+    fig_w = ps.FIG_DOUBLE[0] if n_slo > 3 else ps.FIG_SINGLE[0]
+    fig, ax = plt.subplots(figsize=(fig_w, 2.5))
     for k, r in enumerate(RUNTIMES):
         vals, labels = [], []
         for slo in slo_values:
@@ -137,13 +139,15 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int]):
                           f"$\\lambda$={row['argmax_lambda']:g}")
         bars = ax.bar(x + (k - 1) * w, vals, w,
                       color=ps.RUNTIME_COLORS[r], label=ps.RUNTIME_LABELS[r])
-        ax.bar_label(bars, labels=labels, fontsize=5.5, padding=1)
+        ax.bar_label(bars, labels=labels, fontsize=5, padding=1)
     ax.set_xticks(x)
-    ax.set_xticklabels([f"SLO = {s:g} ms" for s in slo_values])
+    ax.set_xticklabels([f"{s:g}" for s in slo_values])
+    ax.set_xlabel("SLO (ms)")
     ax.set_ylabel("Goodput (completions/s)")
     ax.set_title("Peak Goodput")
     ax.margins(y=0.22)
-    ax.legend(ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.35))
+    fig.legend(*ax.get_legend_handles_labels(), ncol=3,
+               loc="outside lower center")
     return _save(fig, cfg, "plot1c_peak_goodput_bars")
 
 
@@ -322,8 +326,9 @@ def generate(cfg: Config, scheds: dict) -> dict:
         _csv(os.path.join(d, "e2e_table_c.csv"), table_c)
     _csv(os.path.join(d, "e2e_table_d.csv"), table_d)
 
-    # ---- peak goodput: each runtime at its own goodput-maximizing λ ----
-    slo_values = [slo_avg, slo_p99]
+    # ---- peak goodput: each runtime at its own goodput-maximizing λ,
+    #      for every 10 ms SLO from SLO_avg up to SLO_p99 ----
+    slo_values = list(range(slo_avg, slo_p99 + 1, 10)) or [slo_avg]
     peak_rows, _curves = _peak_goodput(cfg, entries, common, div,
                                        slo_values, seed, lams)
     r90 = {q["runtime"]: q["peak_goodput_sps"] for q in peak_rows

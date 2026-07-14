@@ -95,11 +95,15 @@ plots:
   format: "png"
   # Timeline plot (plot7): clip the x-axis to the first N ms (null = full run).
   timeline_xlim_ms: null
-  # Plot 1 pair figures (SLO vs Goodput): one λ per comparison, applied to
-  # BOTH runtimes in that figure (identical arrival trace). 0 = saturated.
-  slo_goodput_lambda:
-    plain: 1600                                  # plot1a: Plain vs Proposed
-    naive: 1690                                  # plot1b: Naive vs Proposed
+  # Plot 1 pair figures: one λ per comparison, applied to BOTH runtimes in the
+  # figure (identical arrival trace). DEFAULT = AUTO, derived from measured
+  # capacities to match e2e Table B: plot1a at D_plain − step (plain's last
+  # stable load), plot1b at D_proposed − step (only proposed stable).
+  # Uncomment to override manually (number = fixed rate, 0 = saturated).
+  # NOTE: manual values here also produce e2e Table C at those λ.
+  # slo_goodput_lambda:
+  #   plain: 1600                                # plot1a: Plain vs Proposed
+  #   naive: 1690                                # plot1b: Naive vs Proposed
   # Latency KDE (plot2/plot2b): bandwidth as a fraction of the data std
   # (scipy bw_method). Larger = smoother, smaller = spikier; null = Scott rule.
   kde_bandwidth: 0.3

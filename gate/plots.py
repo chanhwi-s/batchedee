@@ -99,23 +99,43 @@ def _arrivals_per_runtime(cfg: Config, n: int):
 # --------------------------------------------------------------------------- #
 def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
     """One SLO-vs-goodput figure: `baseline` + the proposed b2 sweep, BOTH
-    replayed on the same arrival trace at the figure's λ
-    (plots.slo_goodput_lambda.<baseline>; 0 or missing = saturated)."""
-    n = schedules["plain"].n_requests
-    lam = float(cfg.get_path(f"plots.slo_goodput_lambda.{baseline}", 0) or 0)
-    if lam <= 0:
-        arr, origin, desc = np.zeros(n, dtype=float), "stage1_start", "saturated"
-    else:
-        arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
-                             "arrival", f"λ={lam:g} req/s")
-    print(f"[{name}] {RUNTIME_LABELS[baseline]} vs Proposed at {desc}")
-    slo = slo_grid_ms(cfg)
+    replayed on the same arrival trace at the figure's λ.
 
+    λ selection (plots.slo_goodput_lambda.<baseline>):
+      missing/"auto" -> derived from measured capacities, matching the e2e
+        Table B rule: plain figure at D_plain − step (the baseline's last
+        stable load); naive figure at D_proposed − step (above naive's
+        capacity: only proposed stable).
+      number > 0    -> manual override at that rate.
+      0             -> saturated (all arrivals at t=0).
+    """
+    n = schedules["plain"].n_requests
     prop = schedules["proposed"]  # {B: Schedule}
     # common set over ALL runtimes so both figures share the same sample base
     all_scheds = [schedules["plain"], schedules["naive"], *prop.values()]
     common = metrics.common_completed(all_scheds)
     mode = cfg.get_path("metrics.goodput_mode", "mean_throughput")
+
+    raw = cfg.get_path(f"plots.slo_goodput_lambda.{baseline}", None)
+    if raw is None or raw == "auto":
+        lams = lambda_grid(cfg)
+        step = float(cfg.arrivals["lambda_sweep"]["step"])
+        anchor = (schedules["plain"] if baseline == "plain"
+                  else prop[int(cfg.batching.seg2_batch)])
+        cap = metrics.capacity_lambda(anchor, common)
+        lam = float(lams[int(np.argmin(np.abs(lams - (cap - step))))])
+        src = (f"auto: {'plain' if baseline == 'plain' else 'proposed'} "
+               f"capacity {cap:.1f} − step")
+    else:
+        lam = float(raw)
+        src = "manual override"
+    if lam <= 0:
+        arr, origin, desc = np.zeros(n, dtype=float), "stage1_start", "saturated"
+    else:
+        arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
+                             "arrival", f"λ={lam:g} req/s")
+    print(f"[{name}] {RUNTIME_LABELS[baseline]} vs Proposed at {desc} ({src})")
+    slo = slo_grid_ms(cfg)
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     ax.plot(slo, metrics.goodput_vs_slo(schedules[baseline], arr, common, slo, mode, origin),
