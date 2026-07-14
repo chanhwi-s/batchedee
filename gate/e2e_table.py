@@ -138,16 +138,16 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int]):
             labels.append(f"{row['peak_goodput_sps']:.0f}\n"
                           f"$\\lambda$={row['argmax_lambda']:g}")
         bars = ax.bar(x + (k - 1) * w, vals, w,
-                      color=ps.RUNTIME_COLORS[r], label=ps.RUNTIME_LABELS[r])
+                      color=ps.RUNTIME_COLORS[r], label=ps.RUNTIME_LABELS[r],
+                      edgecolor="black", linewidth=0.4)
         ax.bar_label(bars, labels=labels, fontsize=5, padding=1)
     ax.set_xticks(x)
     ax.set_xticklabels([f"{s:g}" for s in slo_values])
     ax.set_xlabel("SLO (ms)")
     ax.set_ylabel("Goodput (completions/s)")
     ax.set_title("Peak Goodput")
-    ax.margins(y=0.22)
-    fig.legend(*ax.get_legend_handles_labels(), ncol=3,
-               loc="outside lower center")
+    ax.margins(y=0.45)
+    ax.legend(ncol=1, loc="upper left")
     return _save(fig, cfg, "plot1c_peak_goodput_bars")
 
 
