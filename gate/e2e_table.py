@@ -32,6 +32,11 @@ seg2_batch in the sweep, the λ minimizing mean response time (the knee of the
 load curve) plus the mean/p99 latency at that point and the capacity-based
 divergence λ. Computed on the common set over ALL configurations. plot2b
 draws each latency distribution at these knee λ values.
+
+Peak goodput (plot1c + peak_goodput.{json,csv}): for each runtime and each of
+the two fixed SLOs, goodput is scanned over the whole lambda_sweep grid and
+the maximum (with its argmax λ) is reported — each runtime at its OWN
+goodput-maximizing operating point, complementing the fixed-λ Table B view.
 """
 from __future__ import annotations
 
@@ -67,6 +72,81 @@ def _check(checks: list, name: str, ok: bool, detail: str):
 
 
 # --------------------------------------------------------------------------- #
+def _peak_goodput(cfg: Config, entries: dict, common, div: dict,
+                  slo_values: list[int], seed: int, lams: np.ndarray):
+    """Peak-goodput scan: for each (runtime, SLO), goodput over the whole λ
+    grid via the existing replay path; report the max and its argmax λ.
+    Returns (rows, per-runtime goodput curves)."""
+    n = next(iter(entries.values())).n_requests
+    slo_grid = np.array(slo_values, dtype=float)
+    curves = {r: np.empty((len(lams), len(slo_values))) for r in entries}
+    print(f"[peak] scanning goodput over {len(lams)} λ points "
+          f"({lams[0]:g}–{lams[-1]:g}) ...")
+    for j, lam in enumerate(lams):
+        arr = poisson_arrivals(n, float(lam), seed)
+        for r, s in entries.items():
+            curves[r][j] = metrics.goodput_vs_slo(s, arr, common, slo_grid,
+                                                  "wallclock")
+
+    rows = []
+    for si, slo in enumerate(slo_values):
+        for r in RUNTIMES:
+            c = curves[r][:, si]
+            i = int(np.argmax(c))
+            lam_star, peak = float(lams[i]), float(c[i])
+            rows.append({"slo_ms": int(slo), "runtime": r,
+                         "argmax_lambda": lam_star,
+                         "peak_goodput_sps": round(peak, 1),
+                         "capacity_lambda": round(div[r], 1),
+                         "diverged_at_argmax": bool(lam_star >= div[r])})
+            # sanity: argmax within capacity / not on the sweep boundary
+            if lam_star >= div[r]:
+                print(f"[peak] WARN  ({r}, SLO={slo}ms): argmax λ {lam_star:g} "
+                      f"exceeds capacity {div[r]:.1f}")
+            if i in (0, len(lams) - 1):
+                print(f"[peak] WARN  ({r}, SLO={slo}ms): argmax λ {lam_star:g} "
+                      f"sits on the sweep boundary; peak may not be captured")
+            # sanity: unimodal (rise -> peak -> collapse); tolerate <2% ripple
+            post = c[i:]
+            pre = c[:i + 1]
+            tol = 0.02 * peak
+            if len(post) > 1 and np.any(np.diff(post) > tol):
+                print(f"[peak] WARN  ({r}, SLO={slo}ms): goodput re-rises after "
+                      f"the peak by >2% — curve not unimodal")
+            if len(pre) > 1 and np.any(np.diff(pre) < -tol):
+                print(f"[peak] WARN  ({r}, SLO={slo}ms): goodput dips before "
+                      f"the peak by >2% — curve not unimodal")
+    return rows, curves
+
+
+def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int]):
+    from . import plot_style as ps
+    from .plots import _save
+    import matplotlib.pyplot as plt
+
+    x = np.arange(len(slo_values))
+    w = 0.26
+    fig, ax = plt.subplots(figsize=ps.FIG_SINGLE)
+    for k, r in enumerate(RUNTIMES):
+        vals, labels = [], []
+        for slo in slo_values:
+            row = next(q for q in rows
+                       if q["runtime"] == r and q["slo_ms"] == slo)
+            vals.append(row["peak_goodput_sps"])
+            labels.append(f"{row['peak_goodput_sps']:.0f}\n"
+                          f"$\\lambda$={row['argmax_lambda']:g}")
+        bars = ax.bar(x + (k - 1) * w, vals, w,
+                      color=ps.RUNTIME_COLORS[r], label=ps.RUNTIME_LABELS[r])
+        ax.bar_label(bars, labels=labels, fontsize=5.5, padding=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"SLO = {s:g} ms" for s in slo_values])
+    ax.set_ylabel("Goodput (completions/s)")
+    ax.set_title("Peak Goodput")
+    ax.margins(y=0.22)
+    ax.legend(ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.35))
+    return _save(fig, cfg, "plot1c_peak_goodput_bars")
+
+
 def generate(cfg: Config, scheds: dict) -> dict:
     B = int(cfg.batching.seg2_batch)
     entries = {"plain": scheds["plain"], "naive": scheds["naive"],
@@ -227,10 +307,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
 
     d = cfg.paths["results_dir"]
     os.makedirs(d, exist_ok=True)
-    jpath = os.path.join(d, "e2e_table.json")
-    with open(jpath, "w") as f:
-        json.dump(result, f, indent=2, default=float)
-    written = [jpath]
+    written = []
 
     def _csv(path, rows):
         with open(path, "w", newline="") as f:
@@ -244,6 +321,35 @@ def generate(cfg: Config, scheds: dict) -> dict:
     if table_c:
         _csv(os.path.join(d, "e2e_table_c.csv"), table_c)
     _csv(os.path.join(d, "e2e_table_d.csv"), table_d)
+
+    # ---- peak goodput: each runtime at its own goodput-maximizing λ ----
+    slo_values = [slo_avg, slo_p99]
+    peak_rows, _curves = _peak_goodput(cfg, entries, common, div,
+                                       slo_values, seed, lams)
+    r90 = {q["runtime"]: q["peak_goodput_sps"] for q in peak_rows
+           if q["slo_ms"] == slo_p99}
+    cap_ratio = div["proposed"] / div["naive"]
+    peak_ratio = r90["proposed"] / r90["naive"]
+    print(f"[peak] proposed/naive peak ratio @SLO={slo_p99}ms = "
+          f"{peak_ratio:.3f} (capacity ratio {cap_ratio:.3f})")
+    peak_out = {"meta": {"slo_source": "meta.slo (plain@λ1, rounded to 10 ms)",
+                         "slo_values_ms": slo_values, "seed": seed,
+                         "lambda_grid": dict(cfg.arrivals["lambda_sweep"]),
+                         "peak_ratio_p99_proposed_over_naive": round(peak_ratio, 4),
+                         "capacity_ratio_proposed_over_naive": round(cap_ratio, 4)},
+                "rows": peak_rows}
+    ppath = os.path.join(d, "peak_goodput.json")
+    with open(ppath, "w") as f:
+        json.dump(peak_out, f, indent=2, default=float)
+    written.append(ppath)
+    _csv(os.path.join(d, "peak_goodput.csv"), peak_rows)
+    _peak_goodput_figure(cfg, peak_rows, slo_values)   # heights come from peak_rows
+    result["peak_goodput"] = peak_out
+
+    jpath = os.path.join(d, "e2e_table.json")
+    with open(jpath, "w") as f:
+        json.dump(result, f, indent=2, default=float)
+    written.insert(0, jpath)
 
     _print_tables(table_a, table_b, meta, table_c, table_d)
     for p in written:
