@@ -90,7 +90,7 @@ def _peak_goodput(cfg: Config, entries: dict, common, div: dict,
 
     rows = []
     for si, slo in enumerate(slo_values):
-        for r in RUNTIMES:
+        for r in entries:
             c = curves[r][:, si]
             i = int(np.argmax(c))
             lam_star, peak = float(lams[i]), float(c[i])
@@ -119,35 +119,46 @@ def _peak_goodput(cfg: Config, entries: dict, common, div: dict,
     return rows, curves
 
 
-def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int]):
+def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int],
+                         bs2_values: list[int]):
     from . import plot_style as ps
     from .plots import _save
     import matplotlib.pyplot as plt
 
+    labels_order = ["plain", "naive"] + [f"proposed(bs2={b})" for b in bs2_values]
+    shades = ps.proposed_shades(len(bs2_values))
+    colors = {"plain": ps.RUNTIME_COLORS["plain"], "naive": ps.RUNTIME_COLORS["naive"],
+              **{f"proposed(bs2={b})": c for b, c in zip(bs2_values, shades)}}
+    legend_labels = {"plain": ps.RUNTIME_LABELS["plain"],
+                     "naive": ps.RUNTIME_LABELS["naive"],
+                     **{f"proposed(bs2={b})": ps.b2_label(b) for b in bs2_values}}
+
     n_slo = len(slo_values)
+    n_bars = len(labels_order)
     x = np.arange(n_slo)
-    w = 0.26
-    fig_w = ps.FIG_DOUBLE[0] if n_slo > 3 else ps.FIG_SINGLE[0]
-    fig, ax = plt.subplots(figsize=(fig_w, 2.5))
-    for k, r in enumerate(RUNTIMES):
-        vals, labels = [], []
+    w = 0.8 / n_bars
+    offsets = (np.arange(n_bars) - (n_bars - 1) / 2.0) * w
+    # Wide enough that rotated value labels (one per bar) don't collide;
+    # exact argmax λ per bar lives in peak_goodput.{json,csv}, not the figure.
+    fig_w = max(ps.FIG_DOUBLE[0], 0.32 * n_slo * n_bars)
+    fig, ax = plt.subplots(figsize=(fig_w, 2.8))
+    for k, label in enumerate(labels_order):
+        vals = []
         for slo in slo_values:
             row = next(q for q in rows
-                       if q["runtime"] == r and q["slo_ms"] == slo)
+                       if q["runtime"] == label and q["slo_ms"] == slo)
             vals.append(row["peak_goodput_sps"])
-            labels.append(f"{row['peak_goodput_sps']:.0f}\n"
-                          f"$\\lambda$={row['argmax_lambda']:g}")
-        bars = ax.bar(x + (k - 1) * w, vals, w,
-                      color=ps.RUNTIME_COLORS[r], label=ps.RUNTIME_LABELS[r],
-                      edgecolor="black", linewidth=0.4)
-        ax.bar_label(bars, labels=labels, fontsize=5, padding=1)
+        bars = ax.bar(x + offsets[k], vals, w, color=colors[label],
+                      label=legend_labels[label], edgecolor="black", linewidth=0.4)
+        ax.bar_label(bars, labels=[f"{v:.0f}" for v in vals],
+                     fontsize=4.6, padding=1, rotation=90)
     ax.set_xticks(x)
     ax.set_xticklabels([f"{s:g}" for s in slo_values])
     ax.set_xlabel("SLO (ms)")
     ax.set_ylabel("Goodput (completions/s)")
     ax.set_title("Peak Goodput")
-    ax.margins(y=0.45)
-    ax.legend(ncol=1, loc="upper left")
+    ax.margins(y=0.6)
+    ax.legend(ncol=2, loc="upper left", fontsize=6)
     return _save(fig, cfg, "plot1c_peak_goodput_bars")
 
 
@@ -326,20 +337,30 @@ def generate(cfg: Config, scheds: dict) -> dict:
         _csv(os.path.join(d, "e2e_table_c.csv"), table_c)
     _csv(os.path.join(d, "e2e_table_d.csv"), table_d)
 
-    # ---- peak goodput: each runtime at its own goodput-maximizing λ,
-    #      for every 10 ms SLO from SLO_avg up to SLO_p99 ----
+    # ---- peak goodput: plain, naive, and EVERY proposed bs2, each at its own
+    #      goodput-maximizing λ, for every 10 ms SLO from SLO_avg up to
+    #      SLO_p99. Uses common_all (Table D's set) so all bs2 curves are
+    #      compared on the identical common set. ----
     slo_values = list(range(slo_avg, slo_p99 + 1, 10)) or [slo_avg]
-    peak_rows, _curves = _peak_goodput(cfg, entries, common, div,
+    bs2_values = sorted(all_prop)
+    default_label = f"proposed(bs2={B})"
+    peak_entries = {"plain": scheds["plain"], "naive": scheds["naive"],
+                    **{f"proposed(bs2={b})": all_prop[b] for b in bs2_values}}
+    peak_div = {label: metrics.capacity_lambda(s, common_all)
+               for label, s in peak_entries.items()}
+    peak_rows, _curves = _peak_goodput(cfg, peak_entries, common_all, peak_div,
                                        slo_values, seed, lams)
     r90 = {q["runtime"]: q["peak_goodput_sps"] for q in peak_rows
            if q["slo_ms"] == slo_p99}
-    cap_ratio = div["proposed"] / div["naive"]
-    peak_ratio = r90["proposed"] / r90["naive"]
-    print(f"[peak] proposed/naive peak ratio @SLO={slo_p99}ms = "
+    cap_ratio = peak_div[default_label] / peak_div["naive"]
+    peak_ratio = r90[default_label] / r90["naive"]
+    print(f"[peak] proposed(bs2={B})/naive peak ratio @SLO={slo_p99}ms = "
           f"{peak_ratio:.3f} (capacity ratio {cap_ratio:.3f})")
     peak_out = {"meta": {"slo_source": "meta.slo (plain@λ1, rounded to 10 ms)",
                          "slo_values_ms": slo_values, "seed": seed,
                          "lambda_grid": dict(cfg.arrivals["lambda_sweep"]),
+                         "bs2_values": bs2_values, "default_bs2": B,
+                         "common_set": "common_all (plain, naive, every bs2)",
                          "peak_ratio_p99_proposed_over_naive": round(peak_ratio, 4),
                          "capacity_ratio_proposed_over_naive": round(cap_ratio, 4)},
                 "rows": peak_rows}
@@ -348,7 +369,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
         json.dump(peak_out, f, indent=2, default=float)
     written.append(ppath)
     _csv(os.path.join(d, "peak_goodput.csv"), peak_rows)
-    _peak_goodput_figure(cfg, peak_rows, slo_values)   # heights come from peak_rows
+    _peak_goodput_figure(cfg, peak_rows, slo_values, bs2_values)
     result["peak_goodput"] = peak_out
 
     jpath = os.path.join(d, "e2e_table.json")
