@@ -136,7 +136,7 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int],
     n_slo = len(slo_values)
     n_bars = len(labels_order)
     x = np.arange(n_slo)
-    w = 0.8 / n_bars
+    w = 0.6 / n_bars
     offsets = (np.arange(n_bars) - (n_bars - 1) / 2.0) * w
     # Wide enough that rotated value labels (one per bar) don't collide;
     # exact argmax λ per bar lives in peak_goodput.{json,csv}, not the figure.
@@ -151,7 +151,7 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int],
         bars = ax.bar(x + offsets[k], vals, w, color=colors[label],
                       label=legend_labels[label], edgecolor="black", linewidth=0.4)
         ax.bar_label(bars, labels=[f"{v:.0f}" for v in vals],
-                     fontsize=4.6, padding=1, rotation=90)
+                     fontsize=4.6, padding=1, rotation=0)
     ax.set_xticks(x)
     ax.set_xticklabels([f"{s:g}" for s in slo_values])
     ax.set_xlabel("SLO (ms)")

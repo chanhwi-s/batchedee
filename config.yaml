@@ -54,7 +54,7 @@ arrivals:
     proposed: 1515
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
-    start: 500.0
+    start: 100
     stop: 2000.0
     step: 5.0
   seed: 1234                                     # fixes arrival trace + request sampling
