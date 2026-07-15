@@ -532,6 +532,54 @@ def plot_timeline(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot7_timeline")
 
 
+def plot_stage_time_bars(cfg: Config, schedules: dict):
+    """Plot 7b: stacked vertical bars — total Stage-1 / Stage-2 / idle time
+    per runtime, i.e. plot7's timeline collapsed from chronological position
+    into a per-runtime sum. Same per-runtime arrival trace as plot7, so the
+    two figures share the same run context and are directly comparable.
+    """
+    n = schedules["plain"].n_requests
+    per = _arrivals_per_runtime(cfg, n)
+    B = int(cfg.batching.seg2_batch)
+    rows = [("plain", schedules["plain"]),
+            ("naive", schedules["naive"]),
+            ("proposed", schedules["proposed"][B])]
+
+    totals = {}
+    for r, s in rows:
+        arr = per[r][0]
+        sums = {"seg1": 0.0, "seg2": 0.0, "wait": 0.0}
+        for a, b, kind in _op_intervals(s, arr):
+            sums[kind] += (b - a)
+        totals[r] = sums
+        print(f"[plot7b] {r}: stage1={sums['seg1']*1000:.1f} ms, "
+              f"stage2={sums['seg2']*1000:.1f} ms, idle={sums['wait']*1000:.1f} ms")
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    x = np.arange(len(rows))
+    width = 0.5
+    bottom = np.zeros(len(rows))
+    kind_colors = {
+        "seg1": [RUNTIME_COLORS[r] for r, _ in rows],
+        "seg2": [lighten(RUNTIME_COLORS[r]) for r, _ in rows],
+        "wait": [IDLE_COLOR] * len(rows),
+    }
+    for kind in ("seg1", "seg2", "wait"):
+        vals = np.array([totals[r][kind] * 1000.0 for r, _ in rows])   # ms
+        ax.bar(x, vals, width, bottom=bottom, color=kind_colors[kind],
+              edgecolor="black", linewidth=0.4)
+        bottom += vals
+    ax.set_xticks(x)
+    ax.set_xticklabels([RUNTIME_LABELS[r] for r, _ in rows])
+    ax.set_ylabel("Time (ms)")
+    ax.set_title("GPU Time Breakdown")
+    handles = [Patch(facecolor=STAGE1_SWATCH, label="Stage 1"),
+               Patch(facecolor=STAGE2_SWATCH, label="Stage 2"),
+               Patch(facecolor=IDLE_COLOR, label="Idle")]
+    ax.legend(handles=handles, loc="upper right")
+    return _save(fig, cfg, "plot7b_stage_time_bars")
+
+
 # --------------------------------------------------------------------------- #
 # Plot 8: per-runtime execution stats (mean service time + op count)
 # --------------------------------------------------------------------------- #
@@ -616,6 +664,7 @@ def plot_all(cfg: Config, schedules: dict):
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
+    plot_stage_time_bars(cfg, schedules)
     plot_exec_stats(cfg, schedules)
     plot_naive_seg2_sizes(cfg, schedules)
     return divergence
