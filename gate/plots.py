@@ -264,13 +264,15 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
 
     Plain/naive curves repeat in every panel as fixed references; the proposed
     curve changes with b2. Panels share both axes so shapes are comparable.
-    Each configuration is replayed at its OWN knee λ (minimum-mean-latency
-    operating point; logged to stdout — state these λ values in the caption).
+    Each configuration is replayed at its OWN operating point — knee (default)
+    or capacity−step, via `plots.kde_sweep_anchor` — logged to stdout; state
+    these λ values (and which anchor) in the caption.
     """
     bw = cfg.get_path("plots.kde_bandwidth", 0.4)
     pts = int(cfg.get_path("plots.kde_grid_points", 400))
+    anchor = cfg.get_path("plots.kde_sweep_anchor", "knee")
     lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(
-        cfg, schedules, anchor="knee", tag="plot2b")
+        cfg, schedules, anchor=anchor, tag="plot2b")
 
     all_l = [lat_plain, lat_naive, *lat_prop.values()]
     lo = min(l.min() for l in all_l)

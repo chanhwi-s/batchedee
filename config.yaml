@@ -110,3 +110,11 @@ plots:
   # If clipped, state "tail truncated at X ms" in the figure caption.
   kde_xlim_ms: null
   kde_clip_percentile: 99
+  # plot2b's per-panel λ anchor: each config (plain/naive/every bs2) is
+  # replayed at its OWN operating point, but which one:
+  #   "knee"     -> min-mean-latency sweet spot (Table D; default — shows
+  #                 each config's best-case latency shape)
+  #   "capacity" -> capacity − step, the last stable load (same as plot2/3/
+  #                 3b/7/7b) — shows each config pushed near its throughput
+  #                 ceiling instead, so tails will be much heavier.
+  kde_sweep_anchor: "capacity"
