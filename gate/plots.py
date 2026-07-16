@@ -103,9 +103,9 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
 
     λ selection (plots.slo_goodput_lambda.<baseline>):
       missing/"auto" -> derived from measured capacities, matching the e2e
-        Table B rule: plain figure at D_plain − step (the baseline's last
-        stable load); naive figure at D_proposed − step (above naive's
-        capacity: only proposed stable).
+        Table B rule: each figure sits at its OWN baseline's last stable
+        load (D_baseline − step) — plain figure at D_plain − step, naive
+        figure at D_naive − step. Symmetric across both figures.
       number > 0    -> manual override at that rate.
       0             -> saturated (all arrivals at t=0).
     """
@@ -120,12 +120,9 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
     if raw is None or raw == "auto":
         lams = lambda_grid(cfg)
         step = float(cfg.arrivals["lambda_sweep"]["step"])
-        anchor = (schedules["plain"] if baseline == "plain"
-                  else prop[int(cfg.batching.seg2_batch)])
-        cap = metrics.capacity_lambda(anchor, common)
+        cap = metrics.capacity_lambda(schedules[baseline], common)
         lam = float(lams[int(np.argmin(np.abs(lams - (cap - step))))])
-        src = (f"auto: {'plain' if baseline == 'plain' else 'proposed'} "
-               f"capacity {cap:.1f} − step")
+        src = f"auto: {baseline} capacity {cap:.1f} − step"
     else:
         lam = float(raw)
         src = "manual override"
