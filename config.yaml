@@ -38,20 +38,15 @@ batching:
   seg2_flush_mode: "fixed"
 
 arrivals:
-  # Arrival rate (req/s) for all single-λ plots (goodput/KDE/CDF/timeline).
-  #   0   -> NO Poisson modeling: all requests queued at t=0 (saturated backlog)
-  #   > 0 -> Poisson trace at this rate
-  # Scalar = shared by all runtimes. OR a per-runtime mapping, e.g. each
-  # runtime's sustainable upper bound read off the load-vs-latency plot:
-  #   lambda:
-  #     plain: 1400
-  #     naive: 1650
-  #     proposed: 1700
-  # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
-  lambda: 
+  # NOTE: unused as of the capacity−step refactor — plot2/3/3b/7/7b now each
+  # derive their own λ from lambda_sweep (each config's own measured capacity
+  # minus one sweep step; see gate/plots.py:_capacity_step_lambda). Kept here
+  # only in case a manual per-runtime override is wired back in later.
+  lambda:
     plain: 1300
     naive: 1370
     proposed: 1515
+  # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
     start: 100

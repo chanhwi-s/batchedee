@@ -59,39 +59,33 @@ def _kde(data: np.ndarray, grid: np.ndarray, bw=None) -> np.ndarray:
         return k.sum(axis=1) / (n * bw_abs)
 
 
-def _runtime_lambda(cfg: Config, runtime: str) -> float:
-    """arrivals.lambda: scalar (shared by all runtimes) or a per-runtime
-    mapping {plain: rate, naive: rate, proposed: rate} — e.g. each runtime's
-    sustainable upper bound read off the load-vs-latency plot."""
-    lam = cfg.arrivals["lambda"]
-    if isinstance(lam, dict):
-        if runtime not in lam:
-            raise ValueError(f"arrivals.lambda mapping needs key {runtime!r} "
-                             f"(has {sorted(lam)})")
-        return float(lam[runtime])
-    return float(lam)
+def _capacity_step_lambda(cfg: Config, sched, common) -> float:
+    """`sched`'s own capacity minus one sweep step, snapped to the sweep grid
+    — the last stable load (same convention as plot1a/1b/Table B's λ1/λ3).
+    Capacity itself is a near-critical (ρ→1) boundary; a finite-N replay
+    right at it can already look unstable, so every single-λ figure backs
+    off by one grid step to stay clearly inside the stable regime."""
+    step = float(cfg.arrivals["lambda_sweep"]["step"])
+    cap = metrics.capacity_lambda(sched, common)
+    lams = lambda_grid(cfg)
+    return float(lams[int(np.argmin(np.abs(lams - (cap - step))))])
 
 
-def _single_arrivals(cfg: Config, n: int, runtime: str):
-    """Arrival vector for every single-λ plot (all figures except the λ sweeps).
-
-    lambda == 0 -> NO Poisson modeling: all n requests are queued at t=0
-    (saturated backlog); latency is measured from each sample's seg1 input
-    (service latency) since waiting behind the backlog is a setup artifact.
-    lambda > 0  -> Poisson trace at that rate; latency = response time.
-    The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep.
-    Returns (arrivals_seconds, description, latency_origin).
-    """
-    lam = _runtime_lambda(cfg, runtime)
-    if lam <= 0:
-        return (np.zeros(n, dtype=float),
-                "saturated; latency from seg1 input", "stage1_start")
-    return poisson_arrivals(n, lam, int(cfg.arrivals.seed)), f"λ={lam:g} req/s", "arrival"
+def _capacity_arrivals(cfg: Config, n: int, sched, common):
+    """(arrivals, desc, origin) for `sched` at its own capacity−step λ."""
+    lam = _capacity_step_lambda(cfg, sched, common)
+    return (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
+            f"λ={lam:g} req/s (capacity−step)", "arrival")
 
 
-def _arrivals_per_runtime(cfg: Config, n: int):
-    """{runtime: (arr, desc, origin)} for the three runtimes."""
-    return {r: _single_arrivals(cfg, n, r) for r in RUNTIME_ORDER}
+def _arrivals_per_runtime(cfg: Config, schedules: dict, common):
+    """{runtime: (arr, desc, origin)} for plain/naive/proposed@default bs2,
+    each at its OWN capacity−step λ (last stable load)."""
+    n = schedules["plain"].n_requests
+    B = int(cfg.batching.seg2_batch)
+    entries = {"plain": schedules["plain"], "naive": schedules["naive"],
+               "proposed": schedules["proposed"][B]}
+    return {r: _capacity_arrivals(cfg, n, s, common) for r, s in entries.items()}
 
 
 # --------------------------------------------------------------------------- #
@@ -162,19 +156,20 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
 # Plots 2 & 3: latency distribution / CDF
 # --------------------------------------------------------------------------- #
 def _per_runtime_latencies(cfg: Config, schedules: dict):
-    """[(runtime, latency_ms array)] — each runtime replayed against its own
-    arrival trace — restricted to the common completed set."""
-    n = schedules["plain"].n_requests
-    per = _arrivals_per_runtime(cfg, n)
+    """[(runtime, latency_ms array)] — each runtime replayed at its own
+    capacity−step λ (last stable load) — restricted to the common completed
+    set."""
     B = int(cfg.batching.seg2_batch)
     entries = [("plain", schedules["plain"]),
                ("naive", schedules["naive"]),
                ("proposed", schedules["proposed"][B])]
     common = metrics.common_completed([s for _, s in entries])
+    per = _arrivals_per_runtime(cfg, schedules, common)
 
     data = []
     for r, s in entries:
-        arr, _, origin = per[r]
+        arr, desc, origin = per[r]
+        print(f"[plot2/3] {RUNTIME_LABELS[r]}: {desc}")
         data.append((r, metrics.latency_ms(s, arr, common, origin)))
     return data
 
@@ -214,46 +209,46 @@ def plot_latency_kde(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot2_latency_kde")
 
 
-def _sweep_latencies(cfg: Config, schedules: dict, at_knee: bool = False,
+def _sweep_latencies(cfg: Config, schedules: dict, anchor: str = "capacity",
                      tag: str = ""):
     """Per-runtime latencies for the b2-sweep panel figures: plain/naive as
     fixed references + proposed per seg2_batch, all on the shared common set.
+    EVERY configuration (plain, naive, each bs2) is replayed at its OWN
+    operating point — never a value shared across configs:
 
-    at_knee=True replays EVERY configuration at its own knee λ (the arrival
-    rate minimizing its mean response time over lambda_sweep, see Table D)
-    instead of arrivals.lambda. Returns (lat_plain, lat_naive,
-    {B: lat_proposed}, Bs).
+    anchor="knee"     -> the λ minimizing mean response time (Table D).
+    anchor="capacity" -> capacity−step, the last stable load (default; same
+                         convention as plot1a/1b/Table B).
+    Returns (lat_plain, lat_naive, {B: lat_proposed}, Bs).
     """
     n = schedules["plain"].n_requests
     prop = schedules["proposed"]
     Bs = sorted(prop.keys())
     common = metrics.common_completed(
         [schedules["plain"], schedules["naive"], *prop.values()])
+    seed = int(cfg.arrivals.seed)
+    lams = lambda_grid(cfg)
 
-    if at_knee:
-        lams = lambda_grid(cfg)
-        seed = int(cfg.arrivals.seed)
-
-        def knee_lat(s, label):
+    if anchor == "knee":
+        def pick(s, label):
             k, mean, _p99, edge = metrics.knee_stats(s, lams, common, seed)
             note = "  [WARNING: knee on sweep edge]" if edge else ""
             print(f"[{tag}] {label}: knee λ = {k:g} req/s "
                   f"(mean {mean:.2f} ms){note}")
             return metrics.latency_ms(s, poisson_arrivals(n, k, seed),
                                       common, "arrival")
+    elif anchor == "capacity":
+        def pick(s, label):
+            lam = _capacity_step_lambda(cfg, s, common)
+            print(f"[{tag}] {label}: capacity−step λ = {lam:g} req/s")
+            return metrics.latency_ms(s, poisson_arrivals(n, lam, seed),
+                                      common, "arrival")
+    else:
+        raise ValueError(f"anchor must be 'knee' or 'capacity', got {anchor!r}")
 
-        lat_plain = knee_lat(schedules["plain"], "Plain")
-        lat_naive = knee_lat(schedules["naive"], "Naive")
-        lat_prop = {B: knee_lat(prop[B], b2_label(B)) for B in Bs}
-        return lat_plain, lat_naive, lat_prop, Bs
-
-    per = _arrivals_per_runtime(cfg, n)
-    arr, _, origin = per["plain"]
-    lat_plain = metrics.latency_ms(schedules["plain"], arr, common, origin)
-    arr, _, origin = per["naive"]
-    lat_naive = metrics.latency_ms(schedules["naive"], arr, common, origin)
-    arr, _, origin = per["proposed"]
-    lat_prop = {B: metrics.latency_ms(prop[B], arr, common, origin) for B in Bs}
+    lat_plain = pick(schedules["plain"], "Plain")
+    lat_naive = pick(schedules["naive"], "Naive")
+    lat_prop = {B: pick(prop[B], b2_label(B)) for B in Bs}
     return lat_plain, lat_naive, lat_prop, Bs
 
 
@@ -275,7 +270,7 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
     bw = cfg.get_path("plots.kde_bandwidth", 0.4)
     pts = int(cfg.get_path("plots.kde_grid_points", 400))
     lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(
-        cfg, schedules, at_knee=True, tag="plot2b")
+        cfg, schedules, anchor="knee", tag="plot2b")
 
     all_l = [lat_plain, lat_naive, *lat_prop.values()]
     lo = min(l.min() for l in all_l)
@@ -311,7 +306,8 @@ def plot_latency_cdf_sweep(cfg: Config, schedules: dict):
 
     CDFs handle long tails without distortion, so no x-clipping is applied.
     """
-    lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(cfg, schedules)
+    lat_plain, lat_naive, lat_prop, Bs = _sweep_latencies(
+        cfg, schedules, anchor="capacity", tag="plot3b")
 
     def _cdf(ax, l, **kw):
         l = np.sort(l)
@@ -492,17 +488,18 @@ def plot_timeline(cfg: Config, schedules: dict):
     runtime's base color for stage-1 ops and a lighter tint for stage-2 ops;
     idle (arrival-wait) time is light gray. Works for both seg2 flush modes.
     """
-    n = schedules["plain"].n_requests
-    per = _arrivals_per_runtime(cfg, n)
     B = int(cfg.batching.seg2_batch)
     rows = [("plain", schedules["plain"]),
             ("naive", schedules["naive"]),
             ("proposed", schedules["proposed"][B])]
+    common = metrics.common_completed([s for _, s in rows])
+    per = _arrivals_per_runtime(cfg, schedules, common)
 
     fig, ax = plt.subplots(figsize=FIG_DOUBLE)
     height = 0.6
     for y, (r, s) in enumerate(rows):
-        arr = per[r][0]
+        arr, desc, _ = per[r]
+        print(f"[plot7] {RUNTIME_LABELS[r]}: {desc}")
         colors = {"seg1": RUNTIME_COLORS[r], "seg2": lighten(RUNTIME_COLORS[r]),
                   "wait": IDLE_COLOR}
         per_kind: dict[str, list] = {}
@@ -535,21 +532,21 @@ def plot_stage_time_bars(cfg: Config, schedules: dict):
     into a per-runtime sum. Same per-runtime arrival trace as plot7, so the
     two figures share the same run context and are directly comparable.
     """
-    n = schedules["plain"].n_requests
-    per = _arrivals_per_runtime(cfg, n)
     B = int(cfg.batching.seg2_batch)
     rows = [("plain", schedules["plain"]),
             ("naive", schedules["naive"]),
             ("proposed", schedules["proposed"][B])]
+    common = metrics.common_completed([s for _, s in rows])
+    per = _arrivals_per_runtime(cfg, schedules, common)
 
     totals = {}
     for r, s in rows:
-        arr = per[r][0]
+        arr, desc, _ = per[r]
         sums = {"seg1": 0.0, "seg2": 0.0, "wait": 0.0}
         for a, b, kind in _op_intervals(s, arr):
             sums[kind] += (b - a)
         totals[r] = sums
-        print(f"[plot7b] {r}: stage1={sums['seg1']*1000:.1f} ms, "
+        print(f"[plot7b] {r}: {desc} — stage1={sums['seg1']*1000:.1f} ms, "
               f"stage2={sums['seg2']*1000:.1f} ms, idle={sums['wait']*1000:.1f} ms")
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
