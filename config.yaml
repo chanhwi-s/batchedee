@@ -114,7 +114,15 @@ plots:
   # replayed at its OWN operating point, but which one:
   #   "knee"     -> min-mean-latency sweet spot (Table D; default — shows
   #                 each config's best-case latency shape)
-  #   "capacity" -> capacity − step, the last stable load (same as plot2/3/
-  #                 3b/7/7b) — shows each config pushed near its throughput
-  #                 ceiling instead, so tails will be much heavier.
+  #   "capacity" -> capacity × capacity_margin_frac (same as plot2/3/3b/7/7b)
+  #                 — shows each config pushed near its throughput ceiling
+  #                 instead, so tails will be much heavier.
   kde_sweep_anchor: "capacity"
+  # Safety margin for the distribution-shape figures (plot2/2b/3/3b/7/7b
+  # ONLY — plot1a/1b and Table B/E deliberately keep the tighter
+  # capacity−step convention, see gate/plots.py:_capacity_step_lambda).
+  # A fixed 1-sweep-step margin (~0.3% of capacity) was too thin: plain's
+  # latency showed near-critical (ρ→1) burstiness (bimodal KDE) right at
+  # capacity−step. 0.90 matches Nexus (SOSP'19), which evaluates Poisson
+  # load at 90% of max throughput for the same reason.
+  capacity_margin_frac: 0.90

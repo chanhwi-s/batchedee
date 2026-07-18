@@ -60,27 +60,30 @@ def _kde(data: np.ndarray, grid: np.ndarray, bw=None) -> np.ndarray:
 
 
 def _capacity_step_lambda(cfg: Config, sched, common) -> float:
-    """`sched`'s own capacity minus one sweep step, snapped to the sweep grid
-    — the last stable load (same convention as plot1a/1b/Table B's λ1/λ3).
-    Capacity itself is a near-critical (ρ→1) boundary; a finite-N replay
-    right at it can already look unstable, so every single-λ figure backs
-    off by one grid step to stay clearly inside the stable regime."""
-    step = float(cfg.arrivals["lambda_sweep"]["step"])
+    """`sched`'s own capacity × a safety margin (`plots.capacity_margin_frac`,
+    default 0.90 — same convention as Nexus, SOSP'19: Poisson load at 90% of
+    max throughput), snapped to the sweep grid. Capacity itself is a
+    near-critical (ρ→1) boundary; backing off by a single fixed grid step
+    (~0.3% of capacity here) was not enough margin — plain's latency
+    distribution still showed near-critical burstiness (bimodal KDE) right
+    at capacity−step. A percentage-of-capacity margin scales properly across
+    runtimes with very different capacities, unlike a fixed absolute step."""
+    frac = float(cfg.get_path("plots.capacity_margin_frac", 0.90))
     cap = metrics.capacity_lambda(sched, common)
     lams = lambda_grid(cfg)
-    return float(lams[int(np.argmin(np.abs(lams - (cap - step))))])
+    return float(lams[int(np.argmin(np.abs(lams - (cap * frac))))])
 
 
 def _capacity_arrivals(cfg: Config, n: int, sched, common):
-    """(arrivals, desc, origin) for `sched` at its own capacity−step λ."""
+    """(arrivals, desc, origin) for `sched` at its own capacity×margin λ."""
     lam = _capacity_step_lambda(cfg, sched, common)
     return (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
-            f"λ={lam:g} req/s (capacity−step)", "arrival")
+            f"λ={lam:g} req/s (capacity×margin)", "arrival")
 
 
 def _arrivals_per_runtime(cfg: Config, schedules: dict, common):
     """{runtime: (arr, desc, origin)} for plain/naive/proposed@default bs2,
-    each at its OWN capacity−step λ (last stable load)."""
+    each at its OWN capacity×margin λ (last stable load)."""
     n = schedules["plain"].n_requests
     B = int(cfg.batching.seg2_batch)
     entries = {"plain": schedules["plain"], "naive": schedules["naive"],
@@ -157,8 +160,8 @@ def plot_slo_goodput(cfg: Config, schedules: dict):
 # --------------------------------------------------------------------------- #
 def _per_runtime_latencies(cfg: Config, schedules: dict):
     """[(runtime, latency_ms array)] — each runtime replayed at its own
-    capacity−step λ (last stable load) — restricted to the common completed
-    set."""
+    capacity×margin λ (last stable load) — restricted to the common
+    completed set."""
     B = int(cfg.batching.seg2_batch)
     entries = [("plain", schedules["plain"]),
                ("naive", schedules["naive"]),
@@ -217,8 +220,11 @@ def _sweep_latencies(cfg: Config, schedules: dict, anchor: str = "capacity",
     operating point — never a value shared across configs:
 
     anchor="knee"     -> the λ minimizing mean response time (Table D).
-    anchor="capacity" -> capacity−step, the last stable load (default; same
-                         convention as plot1a/1b/Table B).
+    anchor="capacity" -> capacity × `plots.capacity_margin_frac` (default;
+                         see `_capacity_step_lambda`). NOTE: plot1a/1b and
+                         Table B/E intentionally still use the tighter
+                         capacity−step convention — only the distribution-
+                         shape figures (plot2/2b/3/3b/7/7b) use this margin.
     Returns (lat_plain, lat_naive, {B: lat_proposed}, Bs).
     """
     n = schedules["plain"].n_requests
@@ -240,7 +246,7 @@ def _sweep_latencies(cfg: Config, schedules: dict, anchor: str = "capacity",
     elif anchor == "capacity":
         def pick(s, label):
             lam = _capacity_step_lambda(cfg, s, common)
-            print(f"[{tag}] {label}: capacity−step λ = {lam:g} req/s")
+            print(f"[{tag}] {label}: capacity×margin λ = {lam:g} req/s")
             return metrics.latency_ms(s, poisson_arrivals(n, lam, seed),
                                       common, "arrival")
     else:
@@ -265,8 +271,8 @@ def plot_latency_kde_sweep(cfg: Config, schedules: dict):
     Plain/naive curves repeat in every panel as fixed references; the proposed
     curve changes with b2. Panels share both axes so shapes are comparable.
     Each configuration is replayed at its OWN operating point — knee (default)
-    or capacity−step, via `plots.kde_sweep_anchor` — logged to stdout; state
-    these λ values (and which anchor) in the caption.
+    or capacity×margin, via `plots.kde_sweep_anchor` — logged to stdout;
+    state these λ values (and which anchor) in the caption.
     """
     bw = cfg.get_path("plots.kde_bandwidth", 0.4)
     pts = int(cfg.get_path("plots.kde_grid_points", 400))
