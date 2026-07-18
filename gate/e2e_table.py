@@ -166,7 +166,15 @@ def generate(cfg: Config, scheds: dict) -> dict:
     B = int(cfg.batching.seg2_batch)
     entries = {"plain": scheds["plain"], "naive": scheds["naive"],
                "proposed": scheds["proposed"][B]}
-    common = metrics.common_completed(list(entries.values()))
+    # One common set for the whole function (plain, naive, and EVERY bs2
+    # sweep config) so every table measures capacity — and everything
+    # downstream of it — on the identical sample set. Table A/B/C still only
+    # REPORT the 3 headline configs (`entries`); Table D/E report the full
+    # bs2 sweep (`configs`, below) — only the output scope differs, not the
+    # measurement basis.
+    all_prop = scheds["proposed"]
+    common = common_all = metrics.common_completed(
+        [scheds["plain"], scheds["naive"], *all_prop.values()])
     n = entries["plain"].n_requests
     seed = int(cfg.arrivals.seed)
     lams = lambda_grid(cfg)
@@ -251,9 +259,6 @@ def generate(cfg: Config, scheds: dict) -> dict:
     table_c = _rows_at(user_lams)
 
     # ---- Table D: knee operating point per configuration (incl. bs2 sweep) --
-    all_prop = scheds["proposed"]
-    common_all = metrics.common_completed(
-        [scheds["plain"], scheds["naive"], *all_prop.values()])
     configs = ([("plain", scheds["plain"]), ("naive", scheds["naive"])]
                + [(f"proposed(bs2={b})", all_prop[b]) for b in sorted(all_prop)])
     # ---- Table E: EVERY configuration replayed AT its own measured capacity
