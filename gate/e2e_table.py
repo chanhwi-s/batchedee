@@ -293,9 +293,15 @@ def generate(cfg: Config, scheds: dict) -> dict:
                          f"({thr_cap:.1f}) is {100*rel:.1f}% off nominal "
                          f"capacity ({cap:.1f}) — likely already unstable "
                          f"within N at this λ")
+        # reference λ = capacity − 1 sweep step, grid-snapped — the "last
+        # stable load" convention Table B/plot1a/1b actually use downstream
+        # (Table E itself sits AT capacity; this column shows where that
+        # boundary maps to once backed off to a safe operating point).
+        ref_lambda = _snap(lams, cap - step)
         table_e.append({"config": label, "capacity_lambda": round(cap, 1),
                         "mean_ms": round(mean_cap, 2), "p99_ms": round(p99_cap, 2),
-                        "throughput_sps": round(thr_cap, 1)})
+                        "throughput_sps": round(thr_cap, 1),
+                        "reference_lambda": ref_lambda})
 
     # ---- sanity checks ----
     lam1 = chosen[0]
@@ -459,11 +465,11 @@ def _print_tables(table_a, table_b, meta, table_c=None, table_d=None, table_e=No
         print("\n[e2e] Table E — AT capacity (boundary, not a safe operating "
               "point; see notes for instability warnings)")
         hdr = (f"{'config':<18} {'capacityλ':>10} {'mean(ms)':>9} {'p99(ms)':>9} "
-               f"{'throughput':>11}")
+               f"{'throughput':>11} {'refλ(-step)':>12}")
         print(hdr)
         print("-" * len(hdr))
         for row in table_e:
             print(f"{row['config']:<18} {row['capacity_lambda']:>10.1f} "
                   f"{row['mean_ms']:>9.2f} {row['p99_ms']:>9.2f} "
-                  f"{row['throughput_sps']:>11.1f}")
+                  f"{row['throughput_sps']:>11.1f} {row['reference_lambda']:>12g}")
     print()
