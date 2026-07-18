@@ -12,12 +12,11 @@ Table A (λ-independent, one row per runtime):
   reference only — it is the sweet spot, not the instability point.
 
 Table B (runtime × λ grid): three λ values derived deterministically from the
-capacity-based divergence points:
-  λ1 = D_plain − step                 (below every capacity: all three stable)
-  λ2 = grid-snapped midpoint(D_plain, D_naive)  (plain overloaded;
-                                       naive/proposed stable)
-  λ3 = D_proposed − step              (with a fine sweep step this lies above
-                                       D_naive: only proposed is stable)
+capacity-based divergence points — each runtime's own last stable load:
+  λ1 = D_plain − step     (below every capacity: all three stable)
+  λ2 = D_naive − step     (above D_plain: plain overloaded; naive at its own
+                           ceiling, proposed still stable)
+  λ3 = D_proposed − step  (above D_naive too: only proposed is stable)
 Collisions collapse to the distinct achievable subset (recorded in meta).
 The two SLOs are plain's mean / p99 response time at λ1, rounded to the
 nearest 10 ms, then held fixed across all rows.
@@ -208,10 +207,11 @@ def generate(cfg: Config, scheds: dict) -> dict:
                 "saturated_throughput_sps": round(sat[r], 1),
                 "divergence_lambda": round(div[r], 1)} for r in RUNTIMES]
 
-    # ---- Table B: deterministic λ1/λ2/λ3 from the divergence points ----
+    # ---- Table B: deterministic λ1/λ2/λ3 — each runtime's OWN last stable
+    #      load (capacity − step), same convention for all three ----
     D = {r: div[r] for r in RUNTIMES}
     raw = {"lambda1": _snap(lams, D["plain"] - step),
-           "lambda2": _snap(lams, (D["plain"] + D["naive"]) / 2.0),
+           "lambda2": _snap(lams, D["naive"] - step),
            "lambda3": _snap(lams, D["proposed"] - step)}
     if raw["lambda1"] < lams[0]:
         raw["lambda1"] = float(lams[0])
