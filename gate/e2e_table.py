@@ -256,7 +256,18 @@ def generate(cfg: Config, scheds: dict) -> dict:
         [scheds["plain"], scheds["naive"], *all_prop.values()])
     configs = ([("plain", scheds["plain"]), ("naive", scheds["naive"])]
                + [(f"proposed(bs2={b})", all_prop[b]) for b in sorted(all_prop)])
+    # ---- Table E: EVERY configuration replayed AT its own measured capacity
+    #      (not capacity − step) — mean/p99 response time and completed
+    #      throughput right at the boundary. Capacity is a near-critical
+    #      (ρ→1) point; a finite-N Poisson replay exactly there can already
+    #      show elevated/noisy latency (this is why plot1a/1b/Table B and the
+    #      capacity-anchored plots all back off by one sweep step instead) —
+    #      these numbers describe the boundary itself, not a safe operating
+    #      point. Flag any row where measured throughput undershoots the
+    #      nominal capacity by more than 5%, a sign this replay is already
+    #      queue-unstable within N.
     table_d = []
+    table_e = []
     for label, s in configs:
         k, mean, p99, edge = metrics.knee_stats(s, lams, common_all, seed)
         cap = metrics.capacity_lambda(s, common_all)
@@ -266,6 +277,20 @@ def generate(cfg: Config, scheds: dict) -> dict:
         table_d.append({"config": label, "knee_lambda": k,
                         "mean_ms": round(mean, 2), "p99_ms": round(p99, 2),
                         "divergence_lambda": round(cap, 1)})
+
+        arr_cap = poisson_arrivals(s.n_requests, cap, seed)
+        mean_cap, p99_cap = metrics.response_stats(s, arr_cap, common_all)
+        completion_cap, _ = simulate(s, arr_cap)
+        thr_cap = len(common_all) / metrics.wallclock(completion_cap, arr_cap, common_all)
+        rel = abs(thr_cap - cap) / cap
+        if rel > 0.05:
+            notes.append(f"Table E: {label} measured throughput at capacity "
+                         f"({thr_cap:.1f}) is {100*rel:.1f}% off nominal "
+                         f"capacity ({cap:.1f}) — likely already unstable "
+                         f"within N at this λ")
+        table_e.append({"config": label, "capacity_lambda": round(cap, 1),
+                        "mean_ms": round(mean_cap, 2), "p99_ms": round(p99_cap, 2),
+                        "throughput_sps": round(thr_cap, 1)})
 
     # ---- sanity checks ----
     lam1 = chosen[0]
@@ -318,7 +343,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
         "sanity_checks": checks,
     }
     result = {"meta": meta, "table_a": table_a, "table_b": table_b,
-              "table_c": table_c, "table_d": table_d}
+              "table_c": table_c, "table_d": table_d, "table_e": table_e}
 
     d = cfg.paths["results_dir"]
     os.makedirs(d, exist_ok=True)
@@ -336,6 +361,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
     if table_c:
         _csv(os.path.join(d, "e2e_table_c.csv"), table_c)
     _csv(os.path.join(d, "e2e_table_d.csv"), table_d)
+    _csv(os.path.join(d, "e2e_table_e.csv"), table_e)
 
     # ---- peak goodput: plain, naive, and EVERY proposed bs2, each at its own
     #      goodput-maximizing λ, for every 10 ms SLO from SLO_avg up to
@@ -377,7 +403,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
         json.dump(result, f, indent=2, default=float)
     written.insert(0, jpath)
 
-    _print_tables(table_a, table_b, meta, table_c, table_d)
+    _print_tables(table_a, table_b, meta, table_c, table_d, table_e)
     for p in written:
         print(f"[e2e] wrote {p}")
     return result
@@ -394,7 +420,7 @@ def _print_rows(rows):
               f"{row['goodput_slo_p99']:>10.1f} {str(row['diverged']):>9}")
 
 
-def _print_tables(table_a, table_b, meta, table_c=None, table_d=None):
+def _print_tables(table_a, table_b, meta, table_c=None, table_d=None, table_e=None):
     print("\n[e2e] Table A — λ-independent metrics")
     hdr = f"{'runtime':<10} {'acc(%)':>8} {'sat.thr(s/s)':>13} {'divλ(capacity)':>15}"
     print(hdr)
@@ -423,4 +449,16 @@ def _print_tables(table_a, table_b, meta, table_c=None, table_d=None):
             print(f"{row['config']:<18} {row['knee_lambda']:>8g} "
                   f"{row['mean_ms']:>9.2f} {row['p99_ms']:>9.2f} "
                   f"{row['divergence_lambda']:>15.1f}")
+
+    if table_e:
+        print("\n[e2e] Table E — AT capacity (boundary, not a safe operating "
+              "point; see notes for instability warnings)")
+        hdr = (f"{'config':<18} {'capacityλ':>10} {'mean(ms)':>9} {'p99(ms)':>9} "
+               f"{'throughput':>11}")
+        print(hdr)
+        print("-" * len(hdr))
+        for row in table_e:
+            print(f"{row['config']:<18} {row['capacity_lambda']:>10.1f} "
+                  f"{row['mean_ms']:>9.2f} {row['p99_ms']:>9.2f} "
+                  f"{row['throughput_sps']:>11.1f}")
     print()
