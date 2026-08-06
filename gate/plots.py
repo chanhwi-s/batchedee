@@ -92,16 +92,20 @@ def _arrivals_per_runtime(cfg: Config, schedules: dict, common):
 
 
 # --------------------------------------------------------------------------- #
-# Plot 1a/1b: Goodput under Latency SLOs — proposed (b2 sweep) vs ONE baseline per figure
+# Plot 1a/1b: Goodput under Latency SLOs — plain + naive + the proposed b2 sweep,
+# the two figures differing only in the λ the whole panel is replayed at.
 # --------------------------------------------------------------------------- #
-def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
-    """One SLO-vs-goodput figure: `baseline` + the proposed b2 sweep, BOTH
-    replayed on the same arrival trace at the figure's λ.
+def _slo_goodput_pair(cfg: Config, schedules: dict, anchor_runtime: str, name: str):
+    """One SLO-vs-goodput figure: BOTH baselines (plain, naive) + the proposed
+    b2 sweep, all replayed on the same arrival trace at the figure's λ.
 
-    λ selection (plots.slo_goodput_lambda.<baseline>):
+    `anchor_runtime` no longer selects which curves are drawn — every runtime is
+    drawn in both figures — it only picks the operating point:
+
+    λ selection (plots.slo_goodput_lambda.<anchor_runtime>):
       missing/"auto" -> derived from measured capacities, matching the e2e
-        Table B rule: each figure sits at its OWN baseline's last stable
-        load (D_baseline − step) — plain figure at D_plain − step, naive
+        Table B rule: each figure sits at its OWN anchor's last stable
+        load (D_anchor − step) — plain figure at D_plain − step, naive
         figure at D_naive − step. Symmetric across both figures.
       number > 0    -> manual override at that rate.
       0             -> saturated (all arrivals at t=0).
@@ -113,13 +117,13 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
     common = metrics.common_completed(all_scheds)
     mode = cfg.get_path("metrics.goodput_mode", "mean_throughput")
 
-    raw = cfg.get_path(f"plots.slo_goodput_lambda.{baseline}", None)
+    raw = cfg.get_path(f"plots.slo_goodput_lambda.{anchor_runtime}", None)
     if raw is None or raw == "auto":
         lams = lambda_grid(cfg)
         step = float(cfg.arrivals["lambda_sweep"]["step"])
-        cap = metrics.capacity_lambda(schedules[baseline], common)
+        cap = metrics.capacity_lambda(schedules[anchor_runtime], common)
         lam = float(lams[int(np.argmin(np.abs(lams - (cap - step))))])
-        src = f"auto: {baseline} capacity {cap:.1f} − step"
+        src = f"auto: {anchor_runtime} capacity {cap:.1f} − step"
     else:
         lam = float(raw)
         src = "manual override"
@@ -128,13 +132,14 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
     else:
         arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
                              "arrival", f"λ={lam:g} req/s")
-    print(f"[{name}] {RUNTIME_LABELS[baseline]} vs Proposed at {desc} ({src})")
+    print(f"[{name}] Plain vs Naive vs Proposed at {desc} ({src})")
     slo = slo_grid_ms(cfg)
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    ax.plot(slo, metrics.goodput_vs_slo(schedules[baseline], arr, common, slo, mode, origin),
-            color=RUNTIME_COLORS[baseline], label=RUNTIME_LABELS[baseline],
-            linestyle=RUNTIME_STYLES[baseline]["linestyle"])
+    for r in ("plain", "naive"):
+        ax.plot(slo, metrics.goodput_vs_slo(schedules[r], arr, common, slo, mode, origin),
+                color=RUNTIME_COLORS[r], label=RUNTIME_LABELS[r],
+                linestyle=RUNTIME_STYLES[r]["linestyle"])
     shades = proposed_shades(len(prop))
     for c, (B, sched) in zip(shades, sorted(prop.items())):
         ax.plot(slo, metrics.goodput_vs_slo(sched, arr, common, slo, mode, origin),
@@ -148,8 +153,9 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, baseline: str, name: str):
 
 
 def plot_slo_goodput(cfg: Config, schedules: dict):
-    """Plot 1a: Plain vs Proposed; Plot 1b: Naive vs Proposed — each at its
-    own configured λ (identical trace within a figure)."""
+    """Plot 1a and 1b both show Plain + Naive + the proposed b2 sweep; they
+    differ only in the operating point (λ anchored on plain's capacity for 1a,
+    on naive's for 1b). Within a figure every runtime shares one trace."""
     a = _slo_goodput_pair(cfg, schedules, "plain", "plot1a_slo_goodput_vs_plain")
     b = _slo_goodput_pair(cfg, schedules, "naive", "plot1b_slo_goodput_vs_naive")
     return a, b

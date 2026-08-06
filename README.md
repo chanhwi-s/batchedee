@@ -76,8 +76,9 @@ Outputs:
   sanity checks print PASS/FAIL.
 - Figures (png + pdf) → `artifacts/plots/`
   1. `plot1a_slo_goodput_vs_plain` / `plot1b_slo_goodput_vs_naive` — SLO vs
-     goodput pair figures: the proposed `seg2_batch` sweep vs ONE baseline
-     each, both replayed on the same arrival trace at that figure's λ.
+     goodput pair figures: BOTH baselines (plain, naive) plus the proposed
+     `seg2_batch` sweep in each figure, all replayed on the same arrival trace
+     at that figure's λ. The two figures differ only in the operating point.
      λ is AUTO-derived from measured capacities by default (plot1a at
      D_plain − step, plot1b at D_proposed − step — the same rule as e2e
      Table B); `plots.slo_goodput_lambda.{plain,naive}` overrides manually
