@@ -359,6 +359,58 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot3_latency_cdf")
 
 
+def plot_latency_cdf_common(cfg: Config, schedules: dict):
+    """Plot 11: empirical latency CDF with EVERY runtime replayed at ONE
+    shared λ — the iso-load counterpart to plot3.
+
+    plot3 puts each runtime at its own capacity×margin λ, so its curves mix two
+    effects: the batching structure AND the different offered loads (proposed
+    sustains ~11% more req/s than plain, and is therefore measured at a higher
+    load). This figure removes the load term so the residual gap is attributable
+    to batching alone — in particular to `proposed`'s seg2 queue wait, which
+    naive does not pay because it flushes every seg1 batch's leftovers at once.
+
+    λ comes from `plots.cdf_common_lambda` and is NEVER auto-derived: the value
+    must be one every compared runtime can sustain (i.e. below the smallest
+    capacity — see Table A / plot4), and that choice is the reader's to make and
+    to state in the caption. Unset/null -> the figure is skipped. 0 -> saturated
+    (all arrivals at t=0), latency measured from each sample's stage-1 input.
+    """
+    raw = cfg.get_path("plots.cdf_common_lambda", None)
+    if raw is None:
+        print("[plot11] plots.cdf_common_lambda unset; skipped")
+        return None
+
+    lam = float(raw)
+    n = schedules["plain"].n_requests
+    B = int(cfg.batching.seg2_batch)
+    entries = [("plain", schedules["plain"]),
+               ("naive", schedules["naive"]),
+               ("proposed", schedules["proposed"][B])]
+    common = metrics.common_completed([s for _, s in entries])
+
+    if lam <= 0:
+        arr, origin, desc = np.zeros(n, dtype=float), "stage1_start", "saturated"
+    else:
+        arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
+                             "arrival", f"λ={lam:g} req/s")
+    print(f"[plot11] all runtimes at a SHARED {desc} "
+          f"(proposed at bs2={B}); n={len(common)} common samples")
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    for r, s in entries:
+        l = np.sort(metrics.latency_ms(s, arr, common, origin))
+        print(f"[plot11] {RUNTIME_LABELS[r]}: p50={np.percentile(l, 50):.2f} ms, "
+              f"p90={np.percentile(l, 90):.2f} ms, p99={np.percentile(l, 99):.2f} ms")
+        ax.plot(l, np.arange(1, len(l) + 1) / len(l), color=RUNTIME_COLORS[r],
+                linestyle=RUNTIME_STYLES[r]["linestyle"], label=RUNTIME_LABELS[r])
+    ax.set_xlabel("Latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.set_title(f"Latency CDF at a Shared Load ({desc})")
+    ax.legend(loc="lower right")
+    return _save(fig, cfg, "plot11_latency_cdf_common_lambda")
+
+
 # --------------------------------------------------------------------------- #
 # Plot 4: load vs latency (+ divergence detection)
 # --------------------------------------------------------------------------- #
@@ -669,6 +721,7 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_kde_sweep(cfg, schedules)
     plot_latency_cdf(cfg, schedules)
     plot_latency_cdf_sweep(cfg, schedules)
+    plot_latency_cdf_common(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)

@@ -128,3 +128,12 @@ plots:
   # capacity−step. 0.90 matches Nexus (SOSP'19), which evaluates Poisson
   # load at 90% of max throughput for the same reason.
   capacity_margin_frac: 0.90
+  # Plot 11 (iso-load latency CDF): ONE λ shared by plain / naive / proposed@
+  # seg2_batch, so the curves differ only by batching structure — plot3 gives
+  # each runtime its own capacity×margin λ, which mixes in the load difference
+  # (proposed sustains ~11% more req/s, so plot3 measures it at a higher load).
+  # NEVER auto-derived: pick a rate every compared runtime can sustain, i.e.
+  # below the SMALLEST capacity in Table A (plain's, ~1608 req/s here) with some
+  # margin — 1445 = plain capacity × 0.90. State this λ in the caption.
+  #   null -> figure skipped;  0 -> saturated (latency from stage-1 input)
+  cdf_common_lambda: null
