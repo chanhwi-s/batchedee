@@ -137,3 +137,10 @@ plots:
   # margin — 1445 = plain capacity × 0.90. State this λ in the caption.
   #   null -> figure skipped;  0 -> saturated (latency from stage-1 input)
   cdf_common_lambda: null
+  # Plot 12a/12b (latency histograms — KDE-free view of plot11 / plot3):
+  #   hist_bins    : number of shared bins over [min, kde x-clip] (default 80)
+  #   hist_density : true -> normalized density, false -> raw counts (default)
+  # x-range reuses kde_xlim_ms / kde_clip_percentile above. 12a needs
+  # cdf_common_lambda set (else skipped, like plot11); 12b always renders.
+  hist_bins: 80
+  hist_density: false

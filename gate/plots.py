@@ -412,6 +412,79 @@ def plot_latency_cdf_common(cfg: Config, schedules: dict):
 
 
 # --------------------------------------------------------------------------- #
+# Plot 12a/12b: latency HISTOGRAM (KDE-free view of the same distribution).
+# The KDE (plot2) smears close modes together; a raw histogram keeps the naive
+# exit vs non-exit split (offset = one seg2 service time) and proposed's seg2
+# queue-wait mode visible without any smoothing.
+#   12a: EVERY runtime at ONE shared λ  (plots.cdf_common_lambda; = plot11's λ)
+#   12b: each runtime at its OWN capacity×margin λ            (= plot3's λ)
+# --------------------------------------------------------------------------- #
+def _latency_hist_fig(cfg: Config, data: list, title: str, name: str):
+    """Overlaid per-runtime latency histogram on shared bins.
+
+    `data` = [(runtime, latency_ms array)] (all restricted to the same common
+    set, so equal N -> raw counts are directly comparable). Bins span [min, hi]
+    where `hi` reuses the KDE x-clip (plots.kde_xlim_ms / kde_clip_percentile);
+    latencies past `hi` fall outside the bin edges and are dropped (no edge
+    pile-up), matching plot2's x-range. State any truncation in the caption.
+    """
+    bins = int(cfg.get_path("plots.hist_bins", 80))
+    density = bool(cfg.get_path("plots.hist_density", False))
+    lo = min(l.min() for _, l in data)
+    hi = _kde_hi(cfg, [l for _, l in data], name)
+    edges = np.linspace(lo, hi, bins + 1)
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    for r, l in data:
+        ax.hist(l, bins=edges, density=density, histtype="stepfilled",
+                alpha=0.35, color=RUNTIME_COLORS[r], edgecolor=RUNTIME_COLORS[r],
+                linewidth=1.1, label=RUNTIME_LABELS[r])
+    ax.set_xlim(lo, hi)
+    ax.set_xlabel("Latency (ms)")
+    ax.set_ylabel("Density" if density else "Count")
+    ax.set_title(title)
+    ax.legend(loc="upper right")
+    return fig
+
+
+def plot_latency_hist_common(cfg: Config, schedules: dict):
+    """Plot 12a: latency histogram, EVERY runtime replayed at ONE shared λ
+    (plots.cdf_common_lambda) — histogram counterpart of plot11 (iso-load)."""
+    raw = cfg.get_path("plots.cdf_common_lambda", None)
+    if raw is None:
+        print("[plot12a] plots.cdf_common_lambda unset; skipped")
+        return None
+
+    lam = float(raw)
+    n = schedules["plain"].n_requests
+    B = int(cfg.batching.seg2_batch)
+    entries = [("plain", schedules["plain"]),
+               ("naive", schedules["naive"]),
+               ("proposed", schedules["proposed"][B])]
+    common = metrics.common_completed([s for _, s in entries])
+
+    if lam <= 0:
+        arr, origin, desc = np.zeros(n, dtype=float), "stage1_start", "saturated"
+    else:
+        arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
+                             "arrival", f"λ={lam:g} req/s")
+    print(f"[plot12a] all runtimes at a SHARED {desc} "
+          f"(proposed at bs2={B}); n={len(common)} common samples")
+    data = [(r, metrics.latency_ms(s, arr, common, origin)) for r, s in entries]
+    fig = _latency_hist_fig(
+        cfg, data, f"Latency Distribution at a Shared Load ({desc})", "plot12a")
+    return _save(fig, cfg, "plot12a_latency_hist_common_lambda")
+
+
+def plot_latency_hist(cfg: Config, schedules: dict):
+    """Plot 12b: latency histogram, each runtime replayed at its OWN
+    capacity×margin λ — histogram counterpart of plot3 (per-runtime load)."""
+    data = _per_runtime_latencies(cfg, schedules)
+    fig = _latency_hist_fig(cfg, data, "Latency Distribution", "plot12b")
+    return _save(fig, cfg, "plot12b_latency_hist")
+
+
+# --------------------------------------------------------------------------- #
 # Plot 4: load vs latency (+ divergence detection)
 # --------------------------------------------------------------------------- #
 def plot_load_latency(cfg: Config, schedules: dict):
@@ -722,6 +795,8 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_cdf(cfg, schedules)
     plot_latency_cdf_sweep(cfg, schedules)
     plot_latency_cdf_common(cfg, schedules)
+    plot_latency_hist_common(cfg, schedules)
+    plot_latency_hist(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
