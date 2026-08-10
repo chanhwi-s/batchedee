@@ -1,0 +1,7 @@
+runtime,lambda,avg_ms,p99_ms,goodput_slo_avg,goodput_slo_p99,diverged
+plain,1600.0,38.1,81.62,849.5,1594.6,False
+naive,1600.0,15.82,29.56,1605.5,1605.5,False
+proposed,1600.0,20.1,44.86,1551.4,1605.3,False
+plain,1690.0,245.65,532.5,76.0,328.1,True
+naive,1690.0,30.12,60.38,1333.6,1688.6,False
+proposed,1690.0,21.28,45.0,1632.6,1695.4,False

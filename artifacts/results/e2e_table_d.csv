@@ -1,0 +1,7 @@
+config,knee_lambda,mean_ms,p99_ms,divergence_lambda
+plain,1305.0,16.31,26.29,1606.0
+naive,1335.0,14.53,25.43,1649.9
+proposed(bs2=4),1325.0,15.55,28.06,1620.3
+proposed(bs2=8),1395.0,17.04,34.5,1679.7
+proposed(bs2=16),1455.0,20.81,48.39,1708.4
+proposed(bs2=32),1455.0,30.91,79.82,1644.0

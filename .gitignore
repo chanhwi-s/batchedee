@@ -5,9 +5,10 @@ checkpoints/
 *.pt
 
 # Exported graphs, results, plots, caches
-artifacts/
-*.onnx
+artifacts/hf_cache/
+artifacts/onnx
 
+*.onnx
 # Python
 __pycache__/
 *.pyc
