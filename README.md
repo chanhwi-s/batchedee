@@ -195,6 +195,11 @@ Outputs:
      (default 100 ms) instead of clipped at a percentile the way plot13 is:
      all four panels need one shared scale, and the tail past the SLO is the
      evidence, so a p99 cut would hide it.
+     `plot14e_naive_latency_composition_iso` /
+     `plot14f_proposed_latency_composition_iso` are 13e/13f under the same
+     treatment — per-bin composition at the shared λ, fixed x-axis, SLO line on
+     both panels — so you can read *which component* pushes each runtime's
+     samples past the deadline.
   14. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).

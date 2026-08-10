@@ -1050,29 +1050,30 @@ def _composition_panel(ax, lat, comps, edges, title):
 
 
 def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
-                             name: str, out: str):
-    """Shared body of 13e/13f: two panels (exit | non-exit), bars = bin counts,
-    colors = that bin's mean latency composition.
+                             name: str, out: str, lam=None, slo_ms=None,
+                             xmax=None):
+    """Shared body of 13e/13f (and 14e/14f, which pass lam/slo_ms/xmax): two
+    panels (exit | non-exit), bars = bin counts, colors = that bin's mean
+    latency composition.
 
     `plots.composition_bins` (default 40) is deliberately coarser than
     `hist_bins`: 80 thin bars cut into five colors is unreadable at print size.
-    Skipped in saturated mode (`exit_split_lambda: 0`), where latency is
-    measured from the stage-1 op start and therefore no longer equals the sum
-    of the arrival-referenced components.
+    Skipped in saturated mode, where latency is measured from the stage-1 op
+    start and therefore no longer equals the sum of the arrival-referenced
+    components.
     """
     (sched, label, common, arr, origin, desc, short, pooled,
-     is_exit) = _exit_split_raw(cfg, schedules, runtime)
+     is_exit) = _exit_split_raw(cfg, schedules, runtime, lam)
     if origin != "arrival":
-        print(f"[{name}] {label}: exit_split_lambda is saturated; the additive "
-              f"decomposition is not defined against a stage-1-start clock — "
-              f"skipped")
+        print(f"[{name}] {label}: λ is saturated; the additive decomposition "
+              f"is not defined against a stage-1-start clock — skipped")
         return None
 
     bd = simulate_breakdown(sched, arr)
     comps = {k: bd[k][common] * 1000.0 for k in BREAKDOWN_KEYS}
     bins = int(cfg.get_path("plots.composition_bins", 40))
     lo = float(pooled.min())
-    hi = _kde_hi(cfg, [pooled], name)
+    hi = _exit_split_hi(cfg, pooled, name, xmax)
     edges = np.linspace(lo, hi, bins + 1)
 
     print(f"[{name}] {label} at {desc}; {bins} bins over {lo:.1f}–{hi:.1f} ms")
@@ -1081,6 +1082,7 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
         sub = {k: v[sel] for k, v in comps.items()}
         _composition_panel(ax, pooled[sel], sub, edges,
                            f"{EXIT_CLASS_LABELS[cls]} (n={int(sel.sum())})")
+        _slo_marks(ax, slo_ms)
         means = {k: float(v.mean()) for k, v in sub.items()}
         tot = sum(means.values()) or 1.0
         print(f"[{name}]   {cls:8s} mean latency {tot:6.2f} ms = " + ", ".join(
@@ -1089,7 +1091,7 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
     axes[0].set_ylabel("Count")
     axes[len(axes) // 2].set_xlabel("Latency (ms)")
     fig.suptitle(f"{label} Latency Composition by Bin ({short})")
-    _component_legend(fig)
+    _component_legend(fig, slo_ms)
     return _save(fig, cfg, out)
 
 
@@ -1103,6 +1105,32 @@ def plot_proposed_latency_composition(cfg: Config, schedules: dict):
     """Plot 13f: proposed@seg2_batch — per-bin latency composition."""
     return _latency_composition_fig(cfg, "proposed", schedules, "plot13f",
                                     "plot13f_proposed_latency_composition")
+
+
+def _iso_latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
+                                 name: str, out: str):
+    """13e/13f pinned to plot14's shared λ, fixed x-axis and SLO line."""
+    lam = _iso_exit_split_lambda(cfg, name)
+    if lam is None:
+        return None
+    return _latency_composition_fig(
+        cfg, runtime, schedules, name, out, lam=lam,
+        slo_ms=_iso_exit_split_slo(cfg),
+        xmax=cfg.get_path("plots.exit_split_xlim_ms", 100))
+
+
+def plot_naive_latency_composition_iso(cfg: Config, schedules: dict):
+    """Plot 14e: naive per-bin latency composition, shared λ + SLO line."""
+    return _iso_latency_composition_fig(
+        cfg, "naive", schedules, "plot14e",
+        "plot14e_naive_latency_composition_iso")
+
+
+def plot_proposed_latency_composition_iso(cfg: Config, schedules: dict):
+    """Plot 14f: proposed@seg2_batch per-bin composition, shared λ + SLO."""
+    return _iso_latency_composition_fig(
+        cfg, "proposed", schedules, "plot14f",
+        "plot14f_proposed_latency_composition_iso")
 
 
 # --------------------------------------------------------------------------- #
@@ -1172,10 +1200,15 @@ def _stack_panel(ax, lams, curves, title):
     ax.margins(x=0)
 
 
-def _component_legend(fig):
+def _component_legend(fig, slo_ms=None):
+    """Shared component legend. `slo_ms` (plot14e/14f) appends the deadline
+    line so the red rule in the panels is explained."""
     handles = [Patch(facecolor=COMPONENT_COLORS[k], label=COMPONENT_LABELS[k])
                for k in BREAKDOWN_KEYS]
-    fig.legend(handles=handles, ncol=5, loc="outside lower center")
+    if slo_ms is not None:
+        handles.append(Line2D([], [], color=SLO_COLOR, linewidth=1.1,
+                              label="SLO"))
+    fig.legend(handles=handles, ncol=len(handles), loc="outside lower center")
 
 
 def plot_latency_breakdown(cfg: Config, schedules: dict):
@@ -1430,6 +1463,8 @@ def plot_all(cfg: Config, schedules: dict):
     plot_naive_exit_hist_iso(cfg, schedules)
     plot_proposed_exit_kde_iso(cfg, schedules)
     plot_proposed_exit_hist_iso(cfg, schedules)
+    plot_naive_latency_composition_iso(cfg, schedules)
+    plot_proposed_latency_composition_iso(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
