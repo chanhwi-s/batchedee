@@ -132,8 +132,9 @@ Outputs:
      (per-runtime rate; 0 = that runtime saturated; null = fall back to its
      capacity×margin λ; a scalar applies to all; remove the key to skip the
      figure) — the "each runtime at the load it would actually be operated at"
-     view, so its λ values are written into the legend and the gaps are NOT
-     attributable to batching alone. p50/p90/p99 per runtime are printed to
+     view, so the gaps there are NOT attributable to batching alone. 11b's
+     legend carries the runtime names only; its per-runtime λ values go to
+     stdout and belong in the caption. p50/p90/p99 per runtime are printed to
      stdout by both.
   13. `plot13a_naive_exit_kde` / `plot13b_naive_exit_hist` and
      `plot13c_proposed_exit_kde` / `plot13d_proposed_exit_hist` — ONE early-exit

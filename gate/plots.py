@@ -383,25 +383,25 @@ def _manual_arrivals(cfg: Config, n: int, lam: float):
 
 
 def _latency_cdf_fig(cfg: Config, entries, common, per: dict, title: str,
-                     name: str, label_lambda: bool = False):
+                     name: str):
     """Shared body of plot11a/11b: one empirical CDF per runtime.
 
-    `per` = {runtime: (arrivals, origin, desc, mathtext)}. With `label_lambda`
-    the legend carries each runtime's own operating point (11b, where they
-    differ).
+    `per` = {runtime: (arrivals, origin, desc, mathtext)}. The legend carries
+    the plain runtime name only — each runtime's operating point goes to
+    stdout, so state the λ values in the caption (they are NOT self-evident
+    from 11b, where the curves are not iso-load).
     """
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     for r, s in entries:
-        arr, origin, desc, math = per[r]
+        arr, origin, desc, _ = per[r]
         l = np.sort(metrics.latency_ms(s, arr, common, origin))
         print(f"[{name}] {RUNTIME_LABELS[r]} @ {desc}: "
               f"p50={np.percentile(l, 50):.2f} ms, "
               f"p90={np.percentile(l, 90):.2f} ms, "
               f"p99={np.percentile(l, 99):.2f} ms")
-        label = f"{RUNTIME_LABELS[r]} ({math})" if label_lambda \
-            else RUNTIME_LABELS[r]
         ax.plot(l, np.arange(1, len(l) + 1) / len(l), color=RUNTIME_COLORS[r],
-                linestyle=RUNTIME_STYLES[r]["linestyle"], label=label)
+                linestyle=RUNTIME_STYLES[r]["linestyle"],
+                label=RUNTIME_LABELS[r])
     ax.set_xlabel("Latency (ms)")
     ax.set_ylabel("CDF")
     ax.set_title(title)
@@ -459,8 +459,9 @@ def plot_latency_cdf_per_runtime(cfg: Config, schedules: dict):
       scalar -> the same rate for every runtime (degenerates to 11a)
       0 for a runtime -> that runtime saturated (latency from stage-1 start)
       absent/null altogether -> the figure is skipped
-    Each runtime's λ is printed AND written into its legend entry, since the
-    curves are no longer comparable without it.
+    Each runtime's λ is printed to stdout (not drawn in the legend) — the
+    curves are NOT comparable without those values, so state them in the
+    caption.
     """
     raw = cfg.get_path("arrivals.lambda", None)
     if raw is None:
@@ -481,8 +482,7 @@ def plot_latency_cdf_per_runtime(cfg: Config, schedules: dict):
           f"n={len(common)} common samples")
     return _latency_cdf_fig(cfg, entries, common, per,
                             "Latency CDF at Per-Runtime Loads",
-                            "plot11b_latency_cdf_per_runtime_lambda",
-                            label_lambda=True)
+                            "plot11b_latency_cdf_per_runtime_lambda")
 
 
 # --------------------------------------------------------------------------- #
