@@ -49,7 +49,7 @@ arrivals:
   # Each runtime's λ is printed and written into its legend entry, since the
   # curves are NOT iso-load — that is what plot11a is for; read them as a pair.
   lambda:
-    plain: 1600
+    plain: 1590
     naive: 1650
     proposed: 1650
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
