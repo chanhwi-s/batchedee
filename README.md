@@ -157,6 +157,19 @@ Outputs:
      (saturated: latency measured from the stage-1 op start, dropping the
      shared waits) is what separates naive's modes too — its d goes ~0.7 →
      ~4.6 — useful as a "the two populations really are there" companion.
+     `plot13e_naive_latency_composition` / `plot13f_proposed_latency_composition`
+     extend the same histogram with WHY each bar is where it is: bar height is
+     still the bin count, but each bar is cut into that bin's **mean latency
+     composition** (formation wait / GPU wait / stage-1 / stage-2 queue wait /
+     stage-2 compute, plot5's palette), with exit | non-exit as two panels.
+     Reading left to right shows what turns a fast sample into a slow one —
+     for naive the growing band is formation + GPU wait while stage-2 compute
+     stays a thin constant sliver (exactly why 13a/13b show no split), whereas
+     proposed's non-exit panel is taken over by stage-2 queue wait on the
+     right. `plots.composition_bins` (default 40) is coarser than `hist_bins`
+     on purpose; `gpu_wait` is included because the five components must sum to
+     the latency. Skipped in saturated mode. Per-class component means and
+     percentages are printed to stdout.
   14. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).

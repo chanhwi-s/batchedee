@@ -629,13 +629,12 @@ def _exit_split_lambda(cfg: Config, runtime: str, sched, common) -> tuple:
             f"lambda={lam:g} req/s ({src})", f"$\\lambda$={lam:g} req/s")
 
 
-def _exit_split(cfg: Config, schedules: dict, runtime: str, name: str):
-    """Split one runtime's per-sample latency by exit class.
+def _exit_split_raw(cfg: Config, schedules: dict, runtime: str):
+    """Everything the exit-split figures need, with no printing.
 
-    Restricted to the SAME common completed set as plot2/3/12, so the pooled
-    array here is exactly that runtime's latency array there.
-    Returns (data, pooled_ms, short_desc, label) where
-    data = [("exit", ms), ("nonexit", ms)].
+    Restricted to the SAME common completed set as plot2/3/12, so `pooled` is
+    exactly that runtime's latency array there.
+    Returns (sched, label, common, arr, origin, desc, short, pooled, is_exit).
     """
     B = int(cfg.batching.seg2_batch)
     entries = {"naive": (schedules["naive"], RUNTIME_LABELS["naive"]),
@@ -648,9 +647,19 @@ def _exit_split(cfg: Config, schedules: dict, runtime: str, name: str):
     common = metrics.common_completed(
         [schedules["plain"], schedules["naive"], schedules["proposed"][B]])
     arr, origin, desc, short = _exit_split_lambda(cfg, runtime, sched, common)
-
     pooled = metrics.latency_ms(sched, arr, common, origin)
-    is_exit = _exit_mask(sched)[common]
+    return (sched, label, common, arr, origin, desc, short, pooled,
+            _exit_mask(sched)[common])
+
+
+def _exit_split(cfg: Config, schedules: dict, runtime: str, name: str):
+    """Split one runtime's per-sample latency by exit class (13a–13d).
+
+    Returns (data, pooled_ms, short_desc, label) where
+    data = [("exit", ms), ("nonexit", ms)].
+    """
+    _, label, _, _, _, desc, short, pooled, is_exit = _exit_split_raw(
+        cfg, schedules, runtime)
     data = [("exit", pooled[is_exit]), ("nonexit", pooled[~is_exit])]
 
     ex, nx = data[0][1], data[1][1]
@@ -809,6 +818,119 @@ def plot_proposed_exit_hist(cfg: Config, schedules: dict):
     """Plot 13d: proposed@seg2_batch latency histogram, split by exit class."""
     fig = _exit_split_hist_fig(cfg, "proposed", schedules, "plot13d")
     return _save(fig, cfg, "plot13d_proposed_exit_hist")
+
+
+# --------------------------------------------------------------------------- #
+# Plot 13e/13f: the SAME histogram, but every bar split by where its samples
+# actually spent their time.
+#
+# 13b/13d answer "how many samples land at this latency"; these answer "and WHY
+# are they there". For each bin we take the samples in it, average each latency
+# component over them, and cut the bar (whose height is still the bin count)
+# into those proportions — so bar height still traces the distribution while the
+# colors show composition. Reading left to right along x is then a direct
+# picture of what turns a fast sample into a slow one: for naive the growing
+# band is formation + GPU wait (seg2 compute stays a thin constant sliver, which
+# is exactly why 13a/13b show no split), while for proposed the non-exit panel's
+# right half is dominated by seg2 queue wait.
+#
+# Note `gpu_wait` is included even though it is not one of the "interesting"
+# terms: the five components are additive and must sum to the latency, so
+# dropping it would make the bars lie.
+# --------------------------------------------------------------------------- #
+def _composition_heights(lat: np.ndarray, comps: dict, edges: np.ndarray):
+    """Per-bin stacked heights (counts, split by component share).
+
+    For bin b: height_k[b] = n[b] * mean_k[b] / mean_total[b]
+                           = n[b] * sum_k[b] / sum_total[b]
+    so the segments of a bar sum to the bin's sample count, and their ratio is
+    the mean composition of that bin's latency. Samples outside `edges` (the
+    KDE x-clip tail) are dropped, exactly as in 13b/13d.
+    Returns (centers, width, {component: heights}, counts).
+    """
+    nb = len(edges) - 1
+    idx = np.digitize(lat, edges) - 1
+    inside = (idx >= 0) & (idx < nb)
+    idx = idx[inside]
+    counts = np.bincount(idx, minlength=nb).astype(float)
+    sums = {k: np.bincount(idx, weights=v[inside], minlength=nb)
+            for k, v in comps.items()}
+    total = np.sum(list(sums.values()), axis=0)
+    safe = np.where(total > 0, total, 1.0)
+    heights = {k: counts * s / safe for k, s in sums.items()}
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    return centers, float(edges[1] - edges[0]), heights, counts
+
+
+def _composition_panel(ax, lat, comps, edges, title):
+    centers, width, heights, counts = _composition_heights(lat, comps, edges)
+    bottom = np.zeros(len(centers))
+    for k in BREAKDOWN_KEYS:                     # stacked in pipeline order
+        h = heights[k]
+        if not np.any(h > 0):
+            continue                             # e.g. naive's seg2 queue wait
+        ax.bar(centers, h, width=width, bottom=bottom, align="center",
+               color=COMPONENT_COLORS[k], linewidth=0)
+        bottom += h
+    ax.set_xlim(edges[0], edges[-1])
+    ax.set_title(title)
+    return counts
+
+
+def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
+                             name: str, out: str):
+    """Shared body of 13e/13f: two panels (exit | non-exit), bars = bin counts,
+    colors = that bin's mean latency composition.
+
+    `plots.composition_bins` (default 40) is deliberately coarser than
+    `hist_bins`: 80 thin bars cut into five colors is unreadable at print size.
+    Skipped in saturated mode (`exit_split_lambda: 0`), where latency is
+    measured from the stage-1 op start and therefore no longer equals the sum
+    of the arrival-referenced components.
+    """
+    (sched, label, common, arr, origin, desc, short, pooled,
+     is_exit) = _exit_split_raw(cfg, schedules, runtime)
+    if origin != "arrival":
+        print(f"[{name}] {label}: exit_split_lambda is saturated; the additive "
+              f"decomposition is not defined against a stage-1-start clock — "
+              f"skipped")
+        return None
+
+    bd = simulate_breakdown(sched, arr)
+    comps = {k: bd[k][common] * 1000.0 for k in BREAKDOWN_KEYS}
+    bins = int(cfg.get_path("plots.composition_bins", 40))
+    lo = float(pooled.min())
+    hi = _kde_hi(cfg, [pooled], name)
+    edges = np.linspace(lo, hi, bins + 1)
+
+    print(f"[{name}] {label} at {desc}; {bins} bins over {lo:.1f}–{hi:.1f} ms")
+    fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
+    for ax, (cls, sel) in zip(axes, [("exit", is_exit), ("nonexit", ~is_exit)]):
+        sub = {k: v[sel] for k, v in comps.items()}
+        _composition_panel(ax, pooled[sel], sub, edges,
+                           f"{EXIT_CLASS_LABELS[cls]} (n={int(sel.sum())})")
+        means = {k: float(v.mean()) for k, v in sub.items()}
+        tot = sum(means.values()) or 1.0
+        print(f"[{name}]   {cls:8s} mean latency {tot:6.2f} ms = " + ", ".join(
+            f"{COMPONENT_LABELS[k]} {means[k]:.2f} ({100 * means[k] / tot:.0f}%)"
+            for k in BREAKDOWN_KEYS if means[k] > 0))
+    axes[0].set_ylabel("Count")
+    axes[len(axes) // 2].set_xlabel("Latency (ms)")
+    fig.suptitle(f"{label} Latency Composition by Bin ({short})")
+    _component_legend(fig)
+    return _save(fig, cfg, out)
+
+
+def plot_naive_latency_composition(cfg: Config, schedules: dict):
+    """Plot 13e: naive — per-bin latency composition, exit | non-exit panels."""
+    return _latency_composition_fig(cfg, "naive", schedules, "plot13e",
+                                    "plot13e_naive_latency_composition")
+
+
+def plot_proposed_latency_composition(cfg: Config, schedules: dict):
+    """Plot 13f: proposed@seg2_batch — per-bin latency composition."""
+    return _latency_composition_fig(cfg, "proposed", schedules, "plot13f",
+                                    "plot13f_proposed_latency_composition")
 
 
 # --------------------------------------------------------------------------- #
@@ -1129,6 +1251,8 @@ def plot_all(cfg: Config, schedules: dict):
     plot_naive_exit_hist(cfg, schedules)
     plot_proposed_exit_kde(cfg, schedules)
     plot_proposed_exit_hist(cfg, schedules)
+    plot_naive_latency_composition(cfg, schedules)
+    plot_proposed_latency_composition(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
