@@ -49,9 +49,9 @@ arrivals:
   # Each runtime's λ is printed and written into its legend entry, since the
   # curves are NOT iso-load — that is what plot11a is for; read them as a pair.
   lambda:
-    plain: 0
-    naive: 0
-    proposed: 0
+    plain: 1600
+    naive: 1650
+    proposed: 1650
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
@@ -142,7 +142,7 @@ plots:
   # below the SMALLEST capacity in Table A (plain's, ~1608 req/s here) with some
   # margin — 1445 = plain capacity × 0.90. State this λ in the caption.
   #   null -> figure skipped;  0 -> saturated (latency from stage-1 input)
-  cdf_common_lambda: 0
+  cdf_common_lambda: 1630
   # Plot 12a/12b (latency histograms — KDE-free view of plot11 / plot3):
   #   hist_bins    : number of shared bins over [min, kde x-clip] (default 80)
   #   hist_density : true -> normalized density, false -> raw counts (default)
