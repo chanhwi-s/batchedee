@@ -43,9 +43,9 @@ arrivals:
   # minus one sweep step; see gate/plots.py:_capacity_step_lambda). Kept here
   # only in case a manual per-runtime override is wired back in later.
   lambda:
-    plain: 1640
-    naive: 1650
-    proposed: 1650
+    plain: 0
+    naive: 0
+    proposed: 0
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
@@ -136,7 +136,7 @@ plots:
   # below the SMALLEST capacity in Table A (plain's, ~1608 req/s here) with some
   # margin — 1445 = plain capacity × 0.90. State this λ in the caption.
   #   null -> figure skipped;  0 -> saturated (latency from stage-1 input)
-  cdf_common_lambda: 1650
+  cdf_common_lambda: 0
   # Plot 12a/12b (latency histograms — KDE-free view of plot11 / plot3):
   #   hist_bins    : number of shared bins over [min, kde x-clip] (default 80)
   #   hist_density : true -> normalized density, false -> raw counts (default)
