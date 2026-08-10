@@ -191,7 +191,10 @@ Outputs:
      right, but what matters is how much of it crosses the line. λ is never
      auto-derived here — pick a rate below the smallest capacity among the
      compared runtimes and state it, with the SLO, in the caption. Unset λ
-     skips all four.
+     skips all four. The x-axis is pinned by `plots.exit_split_xlim_ms`
+     (default 100 ms) instead of clipped at a percentile the way plot13 is:
+     all four panels need one shared scale, and the tail past the SLO is the
+     evidence, so a p99 cut would hide it.
   14. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).

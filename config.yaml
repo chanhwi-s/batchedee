@@ -181,7 +181,6 @@ plots:
   #                            (only meaningful with "mixture")
   #   exit_split_hist_stacked: 13b/13d stack the two disjoint classes (sums to
   #                            the pooled histogram); false -> overlaid
-  #   exit_split_marks       : dotted vertical line at each class mean
   # Bandwidth / bins / x-range are inherited from kde_* and hist_bins above.
   # Plot 13e/13f — the 13b/13d histogram with every bar cut by WHERE its
   # samples spent their time: bar height is still the bin count, the colors are
@@ -204,10 +203,15 @@ plots:
   #   exit_split_slo_ms: a number, or a list of numbers, drawn as red vertical
   #     deadline line(s). null = no line. The per-class violation rates at each
   #     SLO are printed to stdout — that is the number the figure argues about.
+  #   exit_split_xlim_ms: FIXED upper x-bound (ms), not the percentile clip
+  #     plot13 uses. All four panels must share one scale to be comparable, and
+  #     the tail past the SLO is exactly what is being argued about, so a p99
+  #     cut would hide the evidence. Anything still beyond it is reported on
+  #     stdout. null -> fall back to plot13's kde_clip_percentile behavior.
   exit_split_common_lambda: 1450
   exit_split_slo_ms: null
+  exit_split_xlim_ms: 100
   exit_split_lambda: null
   exit_split_normalize: "mixture"
   exit_split_show_pooled: true
   exit_split_hist_stacked: true
-  exit_split_marks: true

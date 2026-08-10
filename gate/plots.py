@@ -739,12 +739,22 @@ def _exit_split(cfg: Config, schedules: dict, runtime: str, name: str, lam=None)
     return data, pooled, short, label
 
 
-def _exit_class_marks(ax, data):
-    """Dotted vertical line at each class mean (plots.exit_split_marks)."""
-    for c, l in data:
-        if len(l):
-            ax.axvline(float(l.mean()), color=EXIT_CLASS_COLORS[c],
-                       linestyle=":", linewidth=0.8, alpha=0.8, zorder=1)
+def _exit_split_hi(cfg: Config, pooled: np.ndarray, name: str, xmax=None):
+    """Upper x-bound for an exit-split figure.
+
+    `xmax` (plot14's `plots.exit_split_xlim_ms`) pins the axis to a fixed value
+    so all four panels share one scale and the tail is shown rather than
+    clipped; None falls back to the usual `_kde_hi` percentile clip (plot13).
+    Reports whatever still falls outside, since histogram bins drop it.
+    """
+    if xmax is None:
+        return _kde_hi(cfg, [pooled], name)
+    hi = float(xmax)
+    over = float((pooled > hi).mean())
+    note = f", {100 * over:.2f}% beyond it" if over else ", nothing beyond it"
+    print(f"[{name}] x-range fixed, upper bound {hi:g} ms "
+          f"(plots.exit_split_xlim_ms){note}")
+    return hi
 
 
 def _slo_marks(ax, slo_ms):
@@ -770,7 +780,7 @@ def _exit_split_title(label: str, desc: str) -> str:
 
 
 def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
-                        lam=None, slo_ms=None):
+                        lam=None, slo_ms=None, xmax=None):
     """Shared body of 13a/13c (and 14a/14c, which pass `lam` + `slo_ms`).
 
     `plots.exit_split_normalize`:
@@ -790,7 +800,7 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     show_pooled = bool(cfg.get_path("plots.exit_split_show_pooled", True))
 
     lo = float(pooled.min())
-    hi = _kde_hi(cfg, [pooled], name)
+    hi = _exit_split_hi(cfg, pooled, name, xmax)
     grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -805,8 +815,6 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
         ax.plot(grid, w * _kde(l, grid, bw), color=EXIT_CLASS_COLORS[c],
                 linestyle=EXIT_CLASS_STYLES[c]["linestyle"],
                 label=EXIT_CLASS_LABELS[c], zorder=3)
-    if bool(cfg.get_path("plots.exit_split_marks", True)):
-        _exit_class_marks(ax, data)
     _slo_marks(ax, slo_ms)
 
     ax.set_xlim(lo, hi)
@@ -818,7 +826,7 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
 
 
 def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
-                         lam=None, slo_ms=None):
+                         lam=None, slo_ms=None, xmax=None):
     """Shared body of 13b/13d (and 14b/14d) — the same split, no smoothing.
 
     `plots.exit_split_hist_stacked` (default true): the classes are disjoint
@@ -834,7 +842,7 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     stacked = bool(cfg.get_path("plots.exit_split_hist_stacked", True))
 
     lo = float(pooled.min())
-    hi = _kde_hi(cfg, [pooled], name)
+    hi = _exit_split_hi(cfg, pooled, name, xmax)
     edges = np.linspace(lo, hi, bins + 1)
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -861,8 +869,6 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
                     edgecolor=EXIT_CLASS_COLORS[c], linewidth=1.1,
                     hatch=EXIT_CLASS_STYLES[c]["hatch"],
                     label=EXIT_CLASS_LABELS[c])
-    if bool(cfg.get_path("plots.exit_split_marks", True)):
-        _exit_class_marks(ax, data)
     _slo_marks(ax, slo_ms)
 
     ax.set_xlim(lo, hi)
@@ -920,6 +926,11 @@ def plot_proposed_exit_hist(cfg: Config, schedules: dict):
 # λ is NEVER auto-derived here (that is 13's job): pick a rate below the
 # smallest capacity among the compared runtimes — see Table A / plot4 — and
 # state it, and the SLO, in the caption. Unset -> all four are skipped.
+#
+# The x-axis is also pinned (`plots.exit_split_xlim_ms`, default 100 ms) rather
+# than clipped at a percentile the way plot13 is: all four panels must share
+# one scale to be comparable, and the tail past the SLO is the part being
+# argued about, so cutting it at p99 would hide the evidence.
 # --------------------------------------------------------------------------- #
 def _iso_exit_split_lambda(cfg: Config, name: str):
     """The shared λ for plot14, or None when unset (caller skips)."""
@@ -941,8 +952,9 @@ def _iso_exit_split_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     if lam is None:
         return None
     slo = _iso_exit_split_slo(cfg)
+    xmax = cfg.get_path("plots.exit_split_xlim_ms", 100)
     build = _exit_split_kde_fig if kind == "kde" else _exit_split_hist_fig
-    fig = build(cfg, runtime, schedules, name, lam=lam, slo_ms=slo)
+    fig = build(cfg, runtime, schedules, name, lam=lam, slo_ms=slo, xmax=xmax)
     if slo is not None:
         # how much of each class misses the deadline — the number these figures
         # are drawn to support, so print it for the caption
