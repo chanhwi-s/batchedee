@@ -93,6 +93,54 @@ def _arrivals_per_runtime(cfg: Config, schedules: dict, common):
     return {r: _capacity_arrivals(cfg, n, s, common) for r, s in entries.items()}
 
 
+def _manual_arrivals(cfg: Config, n: int, lam: float):
+    """(arrivals, origin, desc, mathtext) for an explicitly chosen λ — `desc`
+    is the plain-text stdout form, `mathtext` the figure form. 0/negative ->
+    saturated: all arrivals at t=0, latency measured from the stage-1 op start
+    (waiting behind the t=0 backlog is a setup artifact, not a runtime
+    property)."""
+    if lam <= 0:
+        return np.zeros(n, dtype=float), "stage1_start", "saturated", "saturated"
+    return (poisson_arrivals(n, lam, int(cfg.arrivals.seed)), "arrival",
+            f"lambda={lam:g} req/s", f"$\\lambda$={lam:g} req/s")
+
+
+def _config_entries(cfg: Config, schedules: dict):
+    """([(runtime, sched)], common_ids, B) — plain / naive / proposed@seg2_batch
+    on their shared common completed set. The base of plot2c and plot11a/11b."""
+    B = int(cfg.batching.seg2_batch)
+    entries = [("plain", schedules["plain"]),
+               ("naive", schedules["naive"]),
+               ("proposed", schedules["proposed"][B])]
+    return entries, metrics.common_completed([s for _, s in entries]), B
+
+
+def _manual_arrivals_per_runtime(cfg: Config, entries, common, name: str):
+    """{runtime: (arr, origin, desc, mathtext)} from `arrivals.lambda`, or None
+    if that key is absent (caller should skip its figure).
+
+    Shared by plot2c and plot11b — the "each runtime at the load IT would
+    actually be operated at" figures. `arrivals.lambda` may be a per-runtime
+    mapping or a scalar; per runtime a number is a rate, 0 is saturated, and a
+    missing/null entry falls back to that runtime's capacity×margin λ (the
+    plot2/3 convention) with a note on stdout.
+    """
+    raw = cfg.get_path("arrivals.lambda", None)
+    if raw is None:
+        print(f"[{name}] arrivals.lambda unset; skipped")
+        return None
+    n = entries[0][1].n_requests
+    per = {}
+    for r, s in entries:
+        lam = raw.get(r, None) if isinstance(raw, dict) else raw
+        if lam is None:
+            lam = _capacity_step_lambda(cfg, s, common)
+            print(f"[{name}] arrivals.lambda.{r} unset -> falling back to "
+                  f"{r}'s capacity×margin λ = {lam:g} req/s")
+        per[r] = _manual_arrivals(cfg, n, float(lam))
+    return per
+
+
 # --------------------------------------------------------------------------- #
 # Plot 1a/1b: Goodput under Latency SLOs — plain + naive + the proposed b2 sweep,
 # the two figures differing only in the λ the whole panel is replayed at.
@@ -218,6 +266,51 @@ def plot_latency_kde(cfg: Config, schedules: dict):
     ax.set_title("Latency Distribution")
     ax.legend(loc="upper right")
     return _save(fig, cfg, "plot2_latency_kde")
+
+
+def plot_latency_kde_per_runtime(cfg: Config, schedules: dict):
+    """Plot 2c: the same KDE with each runtime at its OWN manually chosen λ,
+    read from `arrivals.lambda` — the KDE counterpart of plot11b.
+
+    plot2 derives every λ automatically (each runtime's capacity×margin); this
+    one uses the rates written in the config, for when the comparison you want
+    is "each runtime at the load it would actually be operated at". Because the
+    offered loads differ, the gaps here are NOT attributable to batching alone.
+    See `_manual_arrivals_per_runtime` for how `arrivals.lambda` is read;
+    absent -> the figure is skipped. Each runtime's λ goes to stdout, not into
+    the legend — state them in the caption.
+    """
+    entries, common, B = _config_entries(cfg, schedules)
+    per = _manual_arrivals_per_runtime(cfg, entries, common, "plot2c")
+    if per is None:
+        return None
+
+    bw = cfg.get_path("plots.kde_bandwidth", 0.4)
+    lats = []
+    for r, s in entries:
+        arr, origin, desc, _ = per[r]
+        l = metrics.latency_ms(s, arr, common, origin)
+        print(f"[plot2c] {RUNTIME_LABELS[r]} @ {desc}: mean={l.mean():.2f} ms, "
+              f"p50={np.percentile(l, 50):.2f} ms, "
+              f"p99={np.percentile(l, 99):.2f} ms")
+        lats.append((r, l))
+    print(f"[plot2c] per-runtime loads (proposed at bs2={B}); "
+          f"n={len(common)} common samples")
+
+    lo = min(l.min() for _, l in lats)
+    hi = _kde_hi(cfg, [l for _, l in lats], "plot2c")
+    grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    for r, l in lats:
+        ax.plot(grid, _kde(l, grid, bw), color=RUNTIME_COLORS[r],
+                linestyle=RUNTIME_STYLES[r]["linestyle"], label=RUNTIME_LABELS[r])
+    ax.set_xlim(lo, hi)
+    ax.set_xlabel("Latency (ms)")
+    ax.set_ylabel("Density")
+    ax.set_title("Latency Distribution at Per-Runtime Loads")
+    ax.legend(loc="upper right")
+    return _save(fig, cfg, "plot2c_latency_kde_per_runtime_lambda")
 
 
 def _sweep_latencies(cfg: Config, schedules: dict, anchor: str = "capacity",
@@ -361,27 +454,6 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot3_latency_cdf")
 
 
-def _cdf_entries(cfg: Config, schedules: dict):
-    """([(runtime, sched)], common_ids, B) for the plot11 pair."""
-    B = int(cfg.batching.seg2_batch)
-    entries = [("plain", schedules["plain"]),
-               ("naive", schedules["naive"]),
-               ("proposed", schedules["proposed"][B])]
-    return entries, metrics.common_completed([s for _, s in entries]), B
-
-
-def _manual_arrivals(cfg: Config, n: int, lam: float):
-    """(arrivals, origin, desc, mathtext) for an explicitly chosen λ — `desc`
-    is the plain-text stdout form, `mathtext` the figure form. 0/negative ->
-    saturated: all arrivals at t=0, latency measured from the stage-1 op start
-    (waiting behind the t=0 backlog is a setup artifact, not a runtime
-    property)."""
-    if lam <= 0:
-        return np.zeros(n, dtype=float), "stage1_start", "saturated", "saturated"
-    return (poisson_arrivals(n, lam, int(cfg.arrivals.seed)), "arrival",
-            f"lambda={lam:g} req/s", f"$\\lambda$={lam:g} req/s")
-
-
 def _latency_cdf_fig(cfg: Config, entries, common, per: dict, title: str,
                      name: str):
     """Shared body of plot11a/11b: one empirical CDF per runtime.
@@ -431,7 +503,7 @@ def plot_latency_cdf_common(cfg: Config, schedules: dict):
         print("[plot11a] plots.cdf_common_lambda unset; skipped")
         return None
 
-    entries, common, B = _cdf_entries(cfg, schedules)
+    entries, common, B = _config_entries(cfg, schedules)
     n = schedules["plain"].n_requests
     got = _manual_arrivals(cfg, n, float(raw))
     print(f"[plot11a] all runtimes at a SHARED {got[2]} "
@@ -452,32 +524,15 @@ def plot_latency_cdf_per_runtime(cfg: Config, schedules: dict):
     loads differ, the gaps here are NOT attributable to batching alone — that is
     exactly what 11a is for; the two figures are meant to be read as a pair.
 
-    `arrivals.lambda`:
-      mapping {plain: …, naive: …, proposed: …} -> per-runtime rate (the
-        intended form; a missing/null entry falls back to that runtime's
-        capacity×margin λ, i.e. the plot3 convention, and says so on stdout)
-      scalar -> the same rate for every runtime (degenerates to 11a)
-      0 for a runtime -> that runtime saturated (latency from stage-1 start)
-      absent/null altogether -> the figure is skipped
-    Each runtime's λ is printed to stdout (not drawn in the legend) — the
-    curves are NOT comparable without those values, so state them in the
-    caption.
+    See `_manual_arrivals_per_runtime` for how `arrivals.lambda` is read;
+    absent -> the figure is skipped. Each runtime's λ is printed to stdout (not
+    drawn in the legend) — the curves are NOT comparable without those values,
+    so state them in the caption. plot2c is the KDE counterpart.
     """
-    raw = cfg.get_path("arrivals.lambda", None)
-    if raw is None:
-        print("[plot11b] arrivals.lambda unset; skipped")
+    entries, common, B = _config_entries(cfg, schedules)
+    per = _manual_arrivals_per_runtime(cfg, entries, common, "plot11b")
+    if per is None:
         return None
-
-    entries, common, B = _cdf_entries(cfg, schedules)
-    n = schedules["plain"].n_requests
-    per = {}
-    for r, s in entries:
-        lam = raw.get(r, None) if isinstance(raw, dict) else raw
-        if lam is None:
-            lam = _capacity_step_lambda(cfg, s, common)
-            print(f"[plot11b] arrivals.lambda.{r} unset -> falling back to "
-                  f"{r}'s capacity×margin λ = {lam:g} req/s")
-        per[r] = _manual_arrivals(cfg, n, float(lam))
     print(f"[plot11b] per-runtime loads (proposed at bs2={B}); "
           f"n={len(common)} common samples")
     return _latency_cdf_fig(cfg, entries, common, per,
@@ -1240,6 +1295,7 @@ def plot_naive_seg2_sizes(cfg: Config, schedules: dict):
 def plot_all(cfg: Config, schedules: dict):
     plot_slo_goodput(cfg, schedules)
     plot_latency_kde(cfg, schedules)
+    plot_latency_kde_per_runtime(cfg, schedules)
     plot_latency_kde_sweep(cfg, schedules)
     plot_latency_cdf(cfg, schedules)
     plot_latency_cdf_sweep(cfg, schedules)

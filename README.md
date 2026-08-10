@@ -84,17 +84,24 @@ Outputs:
      Table B); `plots.slo_goodput_lambda.{plain,naive}` overrides manually
      (0 = saturated).
 
-  All single-λ figures (goodput, KDE, CDF, timeline) share `arrivals.lambda`:
-  `0` disables Poisson modeling entirely (all requests queued at t=0, saturated
-  drain), `> 0` uses the Poisson trace at that rate. It can also be a
-  per-runtime mapping (`lambda: {plain: 1400, naive: 1650, proposed: 1700}`) to
-  benchmark each runtime at its own sustainable load (e.g. read off the
-  load-vs-latency plot); labels then show each runtime's λ. The λ-sweep figures
-  (load vs latency, breakdown) always use `arrivals.lambda_sweep`.
+  Most distribution figures derive their λ automatically (each runtime's own
+  capacity × `plots.capacity_margin_frac`). `arrivals.lambda` is the manual
+  escape hatch, read only by **plot2c and plot11b**: a per-runtime mapping
+  (`lambda: {plain: 1400, naive: 1650, proposed: 1700}`) benchmarks each runtime
+  at its own chosen load, `0` for a runtime means saturated (all requests queued
+  at t=0), and a null entry falls back to that runtime's capacity×margin λ. The
+  λ-sweep figures (load vs latency, breakdown) always use
+  `arrivals.lambda_sweep`.
   2. `plot2_latency_kde` — KDE of per-sample latency per runtime
      (`plots.kde_bandwidth` / `kde_grid_points`; x-axis clipped via
      `plots.kde_xlim_ms` or `kde_clip_percentile` when a long tail squeezes
-     the bulk).
+     the bulk). `plot2c_latency_kde_per_runtime_lambda` is the same figure at
+     the manual `arrivals.lambda` rates instead of the derived ones — the KDE
+     counterpart of plot11b, skipped when that key is absent. Its λ values go
+     to stdout, not the legend, so put them in the caption; and mind that a λ
+     within a few percent of a runtime's capacity puts it in the near-critical
+     (ρ→1) regime, where the KDE grows a second hump that is queue burstiness,
+     not batching structure.
   3. `plot2b_latency_kde_sweep` — same KDE, one panel per `seg2_batch` in the
      sweep (plain/naive repeated as references), horizontally concatenated.
   4. `plot3_latency_cdf` — empirical CDF of per-sample latency per runtime.
