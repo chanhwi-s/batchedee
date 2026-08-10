@@ -487,30 +487,37 @@ def plot_latency_hist(cfg: Config, schedules: dict):
 
 
 # --------------------------------------------------------------------------- #
-# Plot 13a/13b: NAIVE ONLY — latency split by per-sample exit class.
+# Plot 13a–13d: ONE early-exit runtime at a time — latency split by per-sample
+# exit class (purple = exited at stage 1, red = also ran stage 2).
+#   13a/13b: naive     (KDE / histogram)
+#   13c/13d: proposed@batching.seg2_batch (KDE / histogram)
 #
-# Why naive's pooled curve (plot2 / plot12b) looks unimodal even though two
-# populations exist: in naive a non-exiting sample's ONLY extra cost is its own
-# batch's seg2 op, dispatched immediately after that batch's seg1 (dynamic size
-# = per-batch non-exit count). So the two classes share the two dominant AND
-# most variable latency terms — batch-formation wait and GPU queue wait — and
-# the conditionals are the same distribution shifted by one small seg2 service
-# time. The shift is fixed and small while the shared spread has a floor
-# (formation wait ~ (S-1)/2λ dominates at low λ, queue wait at high λ), so the
-# modes never separate by the ~2 pooled sd a visible bimodal curve needs.
-#
-# These figures stop relying on the pooled curve to resolve the split and draw
-# the two conditionals explicitly (exit = purple, non-exit = red), printing the
-# separation (mean gap, pooled sd, Cohen's d) to stdout for the caption.
-#   13a: KDE       — same bandwidth / x-clip convention as plot2
-#   13b: histogram — same bin convention as plot12 (KDE-free)
+# Why the POOLED curves (plot2 / plot12b) look unimodal even though two
+# populations exist. Both classes share the two dominant AND most variable
+# latency terms — batch-formation wait and GPU queue wait — so the conditionals
+# are the same distribution shifted by the non-exit class's extra stage-2 cost.
+# What differs between the runtimes is the size of that shift:
+#   * naive     — the extra cost is only its own batch's seg2 op, dispatched
+#                 immediately after that batch's seg1 (dynamic size = per-batch
+#                 non-exit count). Small and nearly constant, so the shift stays
+#                 far below the shared spread and the modes never resolve.
+#   * proposed  — the extra cost is seg2 QUEUE wait (until seg2_batch fills)
+#                 plus a full static seg2 op, which is both larger and much more
+#                 variable. The split is more visible, and at large seg2_batch
+#                 the non-exit class grows a heavy right tail of its own.
+# The shared spread has a floor either way (formation wait ~ (S-1)/2λ dominates
+# at low λ, queue wait at high λ), so on an end-to-end clock the separation
+# rarely reaches the ~2 pooled sd that a visibly bimodal curve needs — see the
+# Cohen's d printed to stdout, and `plots.exit_split_lambda: 0` for the
+# waits-removed view where it does.
 # --------------------------------------------------------------------------- #
-def _naive_exit_mask(sched) -> np.ndarray:
+def _exit_mask(sched) -> np.ndarray:
     """Bool mask over request ids: True where the sample exits at stage 1.
 
-    In a naive schedule a sample COMPLETES at a seg1 op iff the LPH head was
-    confident enough (conf >= early_exit.confidence_threshold); every other
-    sample completes at the seg2 op that follows its own seg1 batch.
+    A sample COMPLETES at a seg1 op iff the LPH head was confident enough
+    (conf >= early_exit.confidence_threshold); every other sample completes at
+    a later seg2 op. Same rule for naive and proposed — only WHICH seg2 op
+    (immediate vs queued flush) differs.
     """
     mask = np.zeros(sched.n_requests, dtype=bool)
     for op in sched.ops:
@@ -519,53 +526,63 @@ def _naive_exit_mask(sched) -> np.ndarray:
     return mask
 
 
-def _naive_exit_lambda(cfg: Config, schedules: dict, common) -> tuple:
-    """(arrivals, origin, desc, short) for the naive exit-split figures.
-    `desc` is the full stdout description, `short` the compact form that fits
-    in the 3.5-inch figure title.
+def _exit_split_lambda(cfg: Config, runtime: str, sched, common) -> tuple:
+    """(arrivals, origin, desc, short) for the exit-split figures.
+    `desc` is the full stdout description, `short` the compact figure form.
 
-    `plots.naive_exit_lambda`:
-      null / "auto" -> naive's own capacity×margin λ (same operating point as
-                       plot2 / plot3 / plot12b, so 13a is directly comparable
-                       with naive's pooled curve there)
+    `plots.exit_split_lambda` — a scalar applied to every runtime, or a
+    per-runtime mapping ({naive: …, proposed: …}); either way:
+      null / "auto" -> the runtime's OWN capacity×margin λ (the operating point
+                       of plot2 / plot3 / plot12b, so the pooled curve here is
+                       identical to that runtime's curve there)
       number > 0    -> manual override at that rate
       0             -> saturated (all arrivals at t=0; latency measured from
-                       the stage-1 op start, as elsewhere)
+                       the stage-1 op start, as elsewhere). This is the only
+                       setting that removes the shared formation + queue wait,
+                       and hence the only one where the modes actually split.
     """
-    n = schedules["naive"].n_requests
-    raw = cfg.get_path("plots.naive_exit_lambda", None)
+    raw = cfg.get_path("plots.exit_split_lambda", None)
+    if isinstance(raw, dict):
+        raw = raw.get(runtime, None)
     if raw is None or raw == "auto":
-        lam = _capacity_step_lambda(cfg, schedules["naive"], common)
+        lam = _capacity_step_lambda(cfg, sched, common)
         src = "capacity×margin"
     else:
         lam = float(raw)
         src = "manual"
+    n = sched.n_requests
     if lam <= 0:
         return np.zeros(n, dtype=float), "stage1_start", "saturated", "saturated"
     return (poisson_arrivals(n, lam, int(cfg.arrivals.seed)), "arrival",
             f"lambda={lam:g} req/s ({src})", f"$\\lambda$={lam:g} req/s")
 
 
-def _naive_exit_split(cfg: Config, schedules: dict, name: str):
-    """[(class, latency_ms)] for naive's exit / non-exit samples + the pooled
-    array and the operating-point description.
+def _exit_split(cfg: Config, schedules: dict, runtime: str, name: str):
+    """Split one runtime's per-sample latency by exit class.
 
-    Restricted to the SAME common completed set as plot2/3/12 so the pooled
-    curve here is identical to naive's curve there.
-    Returns (data, pooled_ms, short_desc).
+    Restricted to the SAME common completed set as plot2/3/12, so the pooled
+    array here is exactly that runtime's latency array there.
+    Returns (data, pooled_ms, short_desc, label) where
+    data = [("exit", ms), ("nonexit", ms)].
     """
-    sched = schedules["naive"]
     B = int(cfg.batching.seg2_batch)
+    entries = {"naive": (schedules["naive"], RUNTIME_LABELS["naive"]),
+               "proposed": (schedules["proposed"][B],
+                            f"{RUNTIME_LABELS['proposed']} ({b2_label(B)})")}
+    if runtime not in entries:
+        raise ValueError(f"exit-split runtime must be one of {list(entries)}, "
+                         f"got {runtime!r}")
+    sched, label = entries[runtime]
     common = metrics.common_completed(
-        [schedules["plain"], sched, schedules["proposed"][B]])
-    arr, origin, desc, short = _naive_exit_lambda(cfg, schedules, common)
+        [schedules["plain"], schedules["naive"], schedules["proposed"][B]])
+    arr, origin, desc, short = _exit_split_lambda(cfg, runtime, sched, common)
 
     pooled = metrics.latency_ms(sched, arr, common, origin)
-    is_exit = _naive_exit_mask(sched)[common]
+    is_exit = _exit_mask(sched)[common]
     data = [("exit", pooled[is_exit]), ("nonexit", pooled[~is_exit])]
 
     ex, nx = data[0][1], data[1][1]
-    print(f"[{name}] naive at {desc}; n={len(pooled)} common samples "
+    print(f"[{name}] {label} at {desc}; n={len(pooled)} common samples "
           f"(exit {len(ex)} = {100 * len(ex) / max(len(pooled), 1):.1f}%, "
           f"non-exit {len(nx)})")
     if len(ex) > 1 and len(nx) > 1:
@@ -576,38 +593,44 @@ def _naive_exit_split(cfg: Config, schedules: dict, name: str):
         print(f"[{name}] mode gap={gap:.2f} ms, pooled sd={pooled_sd:.2f} ms, "
               f"Cohen's d={gap / pooled_sd if pooled_sd else float('nan'):.2f} "
               f"(d >~ 2 needed for a visibly bimodal pooled curve)")
-    return data, pooled, short
+    return data, pooled, short, label
 
 
 def _exit_class_marks(ax, data):
-    """Dashed vertical line at each class mean (plots.naive_exit_marks)."""
+    """Dotted vertical line at each class mean (plots.exit_split_marks)."""
     for c, l in data:
         if len(l):
             ax.axvline(float(l.mean()), color=EXIT_CLASS_COLORS[c],
                        linestyle=":", linewidth=0.8, alpha=0.8, zorder=1)
 
 
-def plot_naive_exit_kde(cfg: Config, schedules: dict):
-    """Plot 13a: KDE of naive's per-sample latency, split by exit class.
+def _exit_split_title(label: str, desc: str) -> str:
+    """Two-line title — the runtime label plus λ does not fit on one line at
+    FIG_SINGLE width."""
+    return f"{label} Latency by Exit Class\n({desc})"
 
-    `plots.naive_exit_normalize`:
+
+def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str):
+    """Shared body of 13a/13c.
+
+    `plots.exit_split_normalize`:
       "mixture" (default) -- each class KDE is scaled by its share of the
-        samples, so the two curves ADD UP to the pooled naive density (drawn in
-        gray). This is the view that explains the missing bimodality: the sum
-        of two heavily overlapping components has no dip.
+        samples, so the two curves ADD UP to the pooled density (drawn in
+        gray). This is the view that explains a missing bimodality: the sum of
+        two heavily overlapping components has no dip.
       "each" -- each class normalized to unit area instead; shapes are easier
         to compare but the curves no longer sum to the pooled density.
     """
-    data, pooled, desc = _naive_exit_split(cfg, schedules, "plot13a")
+    data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name)
     bw = cfg.get_path("plots.kde_bandwidth", 0.4)
-    norm = str(cfg.get_path("plots.naive_exit_normalize", "mixture")).lower()
+    norm = str(cfg.get_path("plots.exit_split_normalize", "mixture")).lower()
     if norm not in ("mixture", "each"):
-        raise ValueError("plots.naive_exit_normalize must be 'mixture' or "
+        raise ValueError("plots.exit_split_normalize must be 'mixture' or "
                          f"'each', got {norm!r}")
-    show_pooled = bool(cfg.get_path("plots.naive_exit_show_pooled", True))
+    show_pooled = bool(cfg.get_path("plots.exit_split_show_pooled", True))
 
     lo = float(pooled.min())
-    hi = _kde_hi(cfg, [pooled], "plot13a")
+    hi = _kde_hi(cfg, [pooled], name)
     grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -622,45 +645,45 @@ def plot_naive_exit_kde(cfg: Config, schedules: dict):
         ax.plot(grid, w * _kde(l, grid, bw), color=EXIT_CLASS_COLORS[c],
                 linestyle=EXIT_CLASS_STYLES[c]["linestyle"],
                 label=EXIT_CLASS_LABELS[c], zorder=3)
-    if bool(cfg.get_path("plots.naive_exit_marks", True)):
+    if bool(cfg.get_path("plots.exit_split_marks", True)):
         _exit_class_marks(ax, data)
 
     ax.set_xlim(lo, hi)
     ax.set_xlabel("Latency (ms)")
     ax.set_ylabel("Density")
-    ax.set_title(f"Naive Latency by Exit Class ({desc})")
+    ax.set_title(_exit_split_title(label, desc))
     ax.legend(loc="upper right")
-    return _save(fig, cfg, "plot13a_naive_exit_kde")
+    return fig
 
 
-def plot_naive_exit_hist(cfg: Config, schedules: dict):
-    """Plot 13b: histogram counterpart of 13a — no smoothing at all.
+def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str):
+    """Shared body of 13b/13d — the same split with no smoothing at all.
 
-    `plots.naive_exit_hist_stacked` (default true): the classes are disjoint
-    subsets of the same population, so stacking them reproduces naive's pooled
-    histogram exactly and shows how the two components fill in each other's
+    `plots.exit_split_hist_stacked` (default true): the classes are disjoint
+    subsets of the same population, so stacking them reproduces the runtime's
+    pooled histogram exactly and shows how the components fill in each other's
     gaps. Set false for an overlaid (alpha-blended) comparison of the two
     shapes instead. Bins/x-range follow plot12 (plots.hist_bins, the KDE
     x-clip); samples past the clip fall outside the edges and are dropped.
     """
-    data, pooled, desc = _naive_exit_split(cfg, schedules, "plot13b")
+    data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name)
     bins = int(cfg.get_path("plots.hist_bins", 80))
     density = bool(cfg.get_path("plots.hist_density", False))
-    stacked = bool(cfg.get_path("plots.naive_exit_hist_stacked", True))
+    stacked = bool(cfg.get_path("plots.exit_split_hist_stacked", True))
 
     lo = float(pooled.min())
-    hi = _kde_hi(cfg, [pooled], "plot13b")
+    hi = _kde_hi(cfg, [pooled], name)
     edges = np.linspace(lo, hi, bins + 1)
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    order = [c for c in EXIT_CLASS_ORDER]
-    lats = [dict(data)[c] for c in order]
-    colors = [EXIT_CLASS_COLORS[c] for c in order]
-    labels = [EXIT_CLASS_LABELS[c] for c in order]
+    order = list(EXIT_CLASS_ORDER)
+    by_class = dict(data)
     if stacked:
         _, _, containers = ax.hist(
-            lats, bins=edges, density=density, stacked=True,
-            histtype="stepfilled", color=colors, label=labels,
+            [by_class[c] for c in order], bins=edges, density=density,
+            stacked=True, histtype="stepfilled",
+            color=[EXIT_CLASS_COLORS[c] for c in order],
+            label=[EXIT_CLASS_LABELS[c] for c in order],
             edgecolor="white", linewidth=0.3)
         # per-class hatch (ax.hist takes no hatch list) — keeps the stack
         # readable when the figure is printed in grayscale
@@ -676,15 +699,44 @@ def plot_naive_exit_hist(cfg: Config, schedules: dict):
                     edgecolor=EXIT_CLASS_COLORS[c], linewidth=1.1,
                     hatch=EXIT_CLASS_STYLES[c]["hatch"],
                     label=EXIT_CLASS_LABELS[c])
-    if bool(cfg.get_path("plots.naive_exit_marks", True)):
+    if bool(cfg.get_path("plots.exit_split_marks", True)):
         _exit_class_marks(ax, data)
 
     ax.set_xlim(lo, hi)
     ax.set_xlabel("Latency (ms)")
     ax.set_ylabel("Density" if density else "Count")
-    ax.set_title(f"Naive Latency by Exit Class ({desc})")
+    ax.set_title(_exit_split_title(label, desc))
     ax.legend(loc="upper right")
+    return fig
+
+
+def plot_naive_exit_kde(cfg: Config, schedules: dict):
+    """Plot 13a: naive latency KDE, split by exit class."""
+    fig = _exit_split_kde_fig(cfg, "naive", schedules, "plot13a")
+    return _save(fig, cfg, "plot13a_naive_exit_kde")
+
+
+def plot_naive_exit_hist(cfg: Config, schedules: dict):
+    """Plot 13b: naive latency histogram, split by exit class."""
+    fig = _exit_split_hist_fig(cfg, "naive", schedules, "plot13b")
     return _save(fig, cfg, "plot13b_naive_exit_hist")
+
+
+def plot_proposed_exit_kde(cfg: Config, schedules: dict):
+    """Plot 13c: proposed@seg2_batch latency KDE, split by exit class.
+
+    Same construction as 13a; the contrast is the point — proposed's non-exit
+    class carries the seg2 QUEUE wait on top of the seg2 op, so its component
+    sits further right and is wider than naive's.
+    """
+    fig = _exit_split_kde_fig(cfg, "proposed", schedules, "plot13c")
+    return _save(fig, cfg, "plot13c_proposed_exit_kde")
+
+
+def plot_proposed_exit_hist(cfg: Config, schedules: dict):
+    """Plot 13d: proposed@seg2_batch latency histogram, split by exit class."""
+    fig = _exit_split_hist_fig(cfg, "proposed", schedules, "plot13d")
+    return _save(fig, cfg, "plot13d_proposed_exit_hist")
 
 
 # --------------------------------------------------------------------------- #
@@ -1002,6 +1054,8 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_hist(cfg, schedules)
     plot_naive_exit_kde(cfg, schedules)
     plot_naive_exit_hist(cfg, schedules)
+    plot_proposed_exit_kde(cfg, schedules)
+    plot_proposed_exit_hist(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)

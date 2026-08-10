@@ -43,9 +43,9 @@ arrivals:
   # minus one sweep step; see gate/plots.py:_capacity_step_lambda). Kept here
   # only in case a manual per-runtime override is wired back in later.
   lambda:
-    plain: 1300
-    naive: 1370
-    proposed: 1515
+    plain: 1640
+    naive: 1650
+    proposed: 1650
   # The λ-sweep plots (load vs latency, breakdown) always use lambda_sweep below.
   # Load plot sweep (requests/sec). Adjust to your GPU's throughput.
   lambda_sweep:
@@ -136,7 +136,7 @@ plots:
   # below the SMALLEST capacity in Table A (plain's, ~1608 req/s here) with some
   # margin — 1445 = plain capacity × 0.90. State this λ in the caption.
   #   null -> figure skipped;  0 -> saturated (latency from stage-1 input)
-  cdf_common_lambda: null
+  cdf_common_lambda: 1650
   # Plot 12a/12b (latency histograms — KDE-free view of plot11 / plot3):
   #   hist_bins    : number of shared bins over [min, kde x-clip] (default 80)
   #   hist_density : true -> normalized density, false -> raw counts (default)
@@ -144,34 +144,41 @@ plots:
   # cdf_common_lambda set (else skipped, like plot11); 12b always renders.
   hist_bins: 80
   hist_density: false
-  # Plot 13a/13b (naive ONLY, latency split by per-sample exit class —
-  # purple = exits at stage 1, red = runs stage 1 + stage 2). Explains why
-  # naive's pooled curve in plot2/12b shows no bimodality: the classes differ
-  # only by one seg2 service time (~2-3 ms) while both share the formation +
-  # queue wait that carries almost all of the variance. Separation stats
+  # Plot 13a–13d — ONE early-exit runtime per figure, latency split by
+  # per-sample exit class (purple = exits at stage 1, red = also runs stage 2):
+  #   13a/13b naive     KDE / histogram
+  #   13c/13d proposed@seg2_batch  KDE / histogram
+  # These explain why the pooled curves in plot2/12b show little bimodality:
+  # both classes share the formation + queue wait, which carries almost all of
+  # the variance, so the conditionals are one distribution shifted by the
+  # non-exit class's extra stage-2 cost — only ~2-3 ms for naive (its seg2 runs
+  # right after its own seg1), larger and more variable for proposed (seg2
+  # queue wait until seg2_batch fills + a full static seg2). Separation stats
   # (mean gap, pooled sd, Cohen's d) are printed to stdout — quote them in the
-  # caption.
-  #   naive_exit_lambda      : null/"auto" -> naive's capacity×margin λ (same
-  #                            operating point as plot2/3/12b, so the pooled
-  #                            curve matches naive's curve there);
+  # caption. All four share these keys:
+  #   exit_split_lambda      : null/"auto" -> each runtime's OWN capacity×margin
+  #                            λ (the plot2/3/12b operating point, so the pooled
+  #                            curve matches that runtime's curve there);
   #                            number -> fixed rate;  0 -> saturated.
+  #                            May also be a per-runtime mapping, e.g.
+  #                            {naive: null, proposed: 1445}.
   #                            0 is the only setting that actually SPLITS the
   #                            modes (latency is then measured from the stage-1
   #                            op start, which removes the shared formation +
-  #                            queue wait: d jumps 0.7 -> 4.6 here). Use it for
-  #                            a "the two populations do exist" figure; keep
+  #                            queue wait: naive's d jumps 0.7 -> 4.6). Use it
+  #                            for a "the two populations do exist" figure; keep
   #                            null for the honest end-to-end view.
-  #   naive_exit_normalize   : "mixture" -> class KDEs scaled by their sample
+  #   exit_split_normalize   : "mixture" -> class KDEs scaled by their sample
   #                            share, so they sum to the pooled density (shown
   #                            in gray); "each" -> each normalized to unit area
-  #   naive_exit_show_pooled : draw the pooled naive KDE as a gray reference
+  #   exit_split_show_pooled : draw the pooled KDE as a gray reference
   #                            (only meaningful with "mixture")
-  #   naive_exit_hist_stacked: 13b stacks the two disjoint classes (sums to
-  #                            naive's pooled histogram); false -> overlaid
-  #   naive_exit_marks       : dotted vertical line at each class mean
+  #   exit_split_hist_stacked: 13b/13d stack the two disjoint classes (sums to
+  #                            the pooled histogram); false -> overlaid
+  #   exit_split_marks       : dotted vertical line at each class mean
   # Bandwidth / bins / x-range are inherited from kde_* and hist_bins above.
-  naive_exit_lambda: null
-  naive_exit_normalize: "mixture"
-  naive_exit_show_pooled: true
-  naive_exit_hist_stacked: true
-  naive_exit_marks: true
+  exit_split_lambda: null
+  exit_split_normalize: "mixture"
+  exit_split_show_pooled: true
+  exit_split_hist_stacked: true
+  exit_split_marks: true

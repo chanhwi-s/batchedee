@@ -128,23 +128,27 @@ Outputs:
      seg2 queue wait). λ is never auto-derived — pick a rate below the smallest
      capacity in Table A and state it in the caption. p50/p90/p99 per runtime
      are printed to stdout.
-  13. `plot13a_naive_exit_kde` / `plot13b_naive_exit_hist` — **naive only**,
-     per-sample latency split by exit class (purple = exited at stage 1,
-     red = ran stage 1 + stage 2), as a KDE and as a raw histogram. Explains
-     why naive's pooled curve in plot2/plot12b is unimodal: the two classes
-     differ by exactly one seg2 service time (~2–3 ms at `seg1_batch`=16)
-     while both share the formation + queue wait that carries almost all the
-     variance, so the components overlap far too much to resolve. 13a's
-     `"mixture"` normalization scales each class KDE by its sample share so
-     the two sum to the pooled density (gray); 13b stacks the two disjoint
-     classes so they reproduce naive's pooled histogram. λ defaults to naive's
-     capacity×margin (same point as plot2/3/12b); override with
-     `plots.naive_exit_lambda`. Mean gap, pooled sd and Cohen's d are printed
-     to stdout — quote them in the caption. Setting `naive_exit_lambda: 0`
+  13. `plot13a_naive_exit_kde` / `plot13b_naive_exit_hist` and
+     `plot13c_proposed_exit_kde` / `plot13d_proposed_exit_hist` — ONE early-exit
+     runtime per figure (13a/b naive, 13c/d proposed@`seg2_batch`), per-sample
+     latency split by exit class (purple = exited at stage 1, red = also ran
+     stage 2), as a KDE and as a raw histogram. Both classes share the
+     formation + queue wait, which carries almost all the variance, so each
+     pair of conditionals is one distribution shifted by the non-exit class's
+     extra stage-2 cost — and that shift is what differs between the runtimes:
+     naive's seg2 runs right after its own seg1 (gap ≈ 2.9 ms, Cohen's
+     d ≈ 0.7 → no visible bimodality in plot2/plot12b), while proposed's
+     non-exit samples also wait for the seg2 queue to fill (gap ≈ 14.5 ms,
+     d ≈ 2.3 → the split is real and visible). The `"mixture"` normalization
+     scales each class KDE by its sample share so the two sum to the pooled
+     density (gray); the histograms stack the two disjoint classes so they
+     reproduce the pooled histogram. λ defaults to each runtime's own
+     capacity×margin (same point as plot2/3/12b); override per runtime with
+     `plots.exit_split_lambda`. Mean gap, pooled sd and Cohen's d are printed
+     to stdout — quote them in the caption. Setting `exit_split_lambda: 0`
      (saturated: latency measured from the stage-1 op start, dropping the
-     shared waits) is what actually separates the modes — Cohen's d goes from
-     ~0.7 to ~4.6 — useful as the "the two populations really are there"
-     companion figure.
+     shared waits) is what separates naive's modes too — its d goes ~0.7 →
+     ~4.6 — useful as a "the two populations really are there" companion.
   14. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).
