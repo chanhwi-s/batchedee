@@ -65,6 +65,10 @@ EXIT_CLASS_STYLES = {                       # KDE linestyle / histogram hatch
     "pooled":  {"linestyle": ":",  "hatch": None},
 }
 
+# SLO deadline marker (plot14). Deliberately NOT the non-exit vermillion above
+# — a pure red reads as an annotation rather than another data series.
+SLO_COLOR = "#E41A1C"
+
 IDLE_COLOR = "#E4E4E4"      # timeline idle segments
 STAGE2_TINT = 0.45          # blend-toward-white fraction for stage-2 marks
 # neutral swatches for stage legends (dark = stage 1, light = stage 2)

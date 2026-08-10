@@ -17,8 +17,8 @@ from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS, EXIT_CLASS_COLORS,
                          EXIT_CLASS_LABELS, EXIT_CLASS_ORDER, EXIT_CLASS_STYLES,
                          FIG_DOUBLE, FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS,
                          RUNTIME_LABELS, RUNTIME_ORDER, RUNTIME_STYLES,
-                         STAGE1_SWATCH, STAGE2_SWATCH, b2_label, lighten,
-                         proposed_shades)
+                         SLO_COLOR, STAGE1_SWATCH, STAGE2_SWATCH, b2_label,
+                         lighten, proposed_shades)
 from .util import Config, lambda_grid, slo_grid_ms
 
 ps.apply_style()
@@ -684,11 +684,13 @@ def _exit_split_lambda(cfg: Config, runtime: str, sched, common) -> tuple:
             f"lambda={lam:g} req/s ({src})", f"$\\lambda$={lam:g} req/s")
 
 
-def _exit_split_raw(cfg: Config, schedules: dict, runtime: str):
+def _exit_split_raw(cfg: Config, schedules: dict, runtime: str, lam=None):
     """Everything the exit-split figures need, with no printing.
 
     Restricted to the SAME common completed set as plot2/3/12, so `pooled` is
-    exactly that runtime's latency array there.
+    exactly that runtime's latency array there. `lam` overrides the operating
+    point with an explicit rate (plot14, where every runtime shares one λ);
+    None keeps the `plots.exit_split_lambda` rule (plot13).
     Returns (sched, label, common, arr, origin, desc, short, pooled, is_exit).
     """
     B = int(cfg.batching.seg2_batch)
@@ -701,20 +703,25 @@ def _exit_split_raw(cfg: Config, schedules: dict, runtime: str):
     sched, label = entries[runtime]
     common = metrics.common_completed(
         [schedules["plain"], schedules["naive"], schedules["proposed"][B]])
-    arr, origin, desc, short = _exit_split_lambda(cfg, runtime, sched, common)
+    if lam is None:
+        arr, origin, desc, short = _exit_split_lambda(cfg, runtime, sched, common)
+    else:
+        arr, origin, desc, short = _manual_arrivals(cfg, sched.n_requests,
+                                                    float(lam))
+        desc, short = f"{desc} (shared)", f"{short}, shared"
     pooled = metrics.latency_ms(sched, arr, common, origin)
     return (sched, label, common, arr, origin, desc, short, pooled,
             _exit_mask(sched)[common])
 
 
-def _exit_split(cfg: Config, schedules: dict, runtime: str, name: str):
-    """Split one runtime's per-sample latency by exit class (13a–13d).
+def _exit_split(cfg: Config, schedules: dict, runtime: str, name: str, lam=None):
+    """Split one runtime's per-sample latency by exit class (13a–13d, 14a–14d).
 
     Returns (data, pooled_ms, short_desc, label) where
     data = [("exit", ms), ("nonexit", ms)].
     """
     _, label, _, _, _, desc, short, pooled, is_exit = _exit_split_raw(
-        cfg, schedules, runtime)
+        cfg, schedules, runtime, lam)
     data = [("exit", pooled[is_exit]), ("nonexit", pooled[~is_exit])]
 
     ex, nx = data[0][1], data[1][1]
@@ -740,14 +747,31 @@ def _exit_class_marks(ax, data):
                        linestyle=":", linewidth=0.8, alpha=0.8, zorder=1)
 
 
+def _slo_marks(ax, slo_ms):
+    """Vertical red deadline line(s) at the SLO(s) (plot14).
+
+    `slo_ms` is a number or a list of numbers in ms; only the first gets a
+    legend entry so a two-SLO figure does not carry a redundant label.
+    """
+    if slo_ms is None:
+        return
+    values = [float(v) for v in (slo_ms if isinstance(slo_ms, (list, tuple))
+                                 else [slo_ms])]
+    for i, v in enumerate(sorted(values)):
+        ax.axvline(v, color=SLO_COLOR, linestyle="-", linewidth=1.1,
+                   alpha=0.9, zorder=4,
+                   label="SLO" if i == 0 else None)
+
+
 def _exit_split_title(label: str, desc: str) -> str:
     """Two-line title — the runtime label plus λ does not fit on one line at
     FIG_SINGLE width."""
     return f"{label} Latency by Exit Class\n({desc})"
 
 
-def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str):
-    """Shared body of 13a/13c.
+def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
+                        lam=None, slo_ms=None):
+    """Shared body of 13a/13c (and 14a/14c, which pass `lam` + `slo_ms`).
 
     `plots.exit_split_normalize`:
       "mixture" (default) -- each class KDE is scaled by its share of the
@@ -757,7 +781,7 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str):
       "each" -- each class normalized to unit area instead; shapes are easier
         to compare but the curves no longer sum to the pooled density.
     """
-    data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name)
+    data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name, lam)
     bw = cfg.get_path("plots.kde_bandwidth", 0.4)
     norm = str(cfg.get_path("plots.exit_split_normalize", "mixture")).lower()
     if norm not in ("mixture", "each"):
@@ -783,6 +807,7 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str):
                 label=EXIT_CLASS_LABELS[c], zorder=3)
     if bool(cfg.get_path("plots.exit_split_marks", True)):
         _exit_class_marks(ax, data)
+    _slo_marks(ax, slo_ms)
 
     ax.set_xlim(lo, hi)
     ax.set_xlabel("Latency (ms)")
@@ -792,8 +817,9 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str):
     return fig
 
 
-def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str):
-    """Shared body of 13b/13d — the same split with no smoothing at all.
+def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
+                         lam=None, slo_ms=None):
+    """Shared body of 13b/13d (and 14b/14d) — the same split, no smoothing.
 
     `plots.exit_split_hist_stacked` (default true): the classes are disjoint
     subsets of the same population, so stacking them reproduces the runtime's
@@ -802,7 +828,7 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str):
     shapes instead. Bins/x-range follow plot12 (plots.hist_bins, the KDE
     x-clip); samples past the clip fall outside the edges and are dropped.
     """
-    data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name)
+    data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name, lam)
     bins = int(cfg.get_path("plots.hist_bins", 80))
     density = bool(cfg.get_path("plots.hist_density", False))
     stacked = bool(cfg.get_path("plots.exit_split_hist_stacked", True))
@@ -837,6 +863,7 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str):
                     label=EXIT_CLASS_LABELS[c])
     if bool(cfg.get_path("plots.exit_split_marks", True)):
         _exit_class_marks(ax, data)
+    _slo_marks(ax, slo_ms)
 
     ax.set_xlim(lo, hi)
     ax.set_xlabel("Latency (ms)")
@@ -873,6 +900,84 @@ def plot_proposed_exit_hist(cfg: Config, schedules: dict):
     """Plot 13d: proposed@seg2_batch latency histogram, split by exit class."""
     fig = _exit_split_hist_fig(cfg, "proposed", schedules, "plot13d")
     return _save(fig, cfg, "plot13d_proposed_exit_hist")
+
+
+# --------------------------------------------------------------------------- #
+# Plot 14a–14d: 13a–13d again, but pinned to ONE config-given λ and annotated
+# with the SLO deadline.
+#
+# 13a–13d put each runtime at its OWN capacity×margin λ, which is right for
+# "what does this runtime's latency look like when pushed near its ceiling" but
+# makes naive and proposed non-comparable — they are measured at different
+# offered loads. 14a–14d replay BOTH at the single rate in
+# `plots.exit_split_common_lambda`, so 14a/14b and 14c/14d sit side by side at
+# iso-load and the only difference left is the batching structure. The red
+# vertical line(s) from `plots.exit_split_slo_ms` mark the deadline, making the
+# SLO-violating mass readable straight off the figure — which is the whole
+# argument for proposed: its non-exit component may sit further right, but the
+# question that matters is how much of it crosses the line.
+#
+# λ is NEVER auto-derived here (that is 13's job): pick a rate below the
+# smallest capacity among the compared runtimes — see Table A / plot4 — and
+# state it, and the SLO, in the caption. Unset -> all four are skipped.
+# --------------------------------------------------------------------------- #
+def _iso_exit_split_lambda(cfg: Config, name: str):
+    """The shared λ for plot14, or None when unset (caller skips)."""
+    raw = cfg.get_path("plots.exit_split_common_lambda", None)
+    if raw is None:
+        print(f"[{name}] plots.exit_split_common_lambda unset; skipped")
+        return None
+    return float(raw)
+
+
+def _iso_exit_split_slo(cfg: Config):
+    """`plots.exit_split_slo_ms` — a number, a list of numbers, or None."""
+    return cfg.get_path("plots.exit_split_slo_ms", None)
+
+
+def _iso_exit_split_fig(cfg: Config, runtime: str, schedules: dict, name: str,
+                        out: str, kind: str):
+    lam = _iso_exit_split_lambda(cfg, name)
+    if lam is None:
+        return None
+    slo = _iso_exit_split_slo(cfg)
+    build = _exit_split_kde_fig if kind == "kde" else _exit_split_hist_fig
+    fig = build(cfg, runtime, schedules, name, lam=lam, slo_ms=slo)
+    if slo is not None:
+        # how much of each class misses the deadline — the number these figures
+        # are drawn to support, so print it for the caption
+        *_, pooled, is_exit = _exit_split_raw(cfg, schedules, runtime, lam)
+        values = slo if isinstance(slo, (list, tuple)) else [slo]
+        for v in sorted(float(x) for x in values):
+            print(f"[{name}] SLO {v:g} ms violated by: "
+                  f"all {100 * (pooled > v).mean():.2f}%, "
+                  f"exit {100 * (pooled[is_exit] > v).mean():.2f}%, "
+                  f"non-exit {100 * (pooled[~is_exit] > v).mean():.2f}%")
+    return _save(fig, cfg, out)
+
+
+def plot_naive_exit_kde_iso(cfg: Config, schedules: dict):
+    """Plot 14a: naive latency KDE by exit class, at the shared λ + SLO line."""
+    return _iso_exit_split_fig(cfg, "naive", schedules, "plot14a",
+                               "plot14a_naive_exit_kde_iso", "kde")
+
+
+def plot_naive_exit_hist_iso(cfg: Config, schedules: dict):
+    """Plot 14b: naive latency histogram by exit class, shared λ + SLO line."""
+    return _iso_exit_split_fig(cfg, "naive", schedules, "plot14b",
+                               "plot14b_naive_exit_hist_iso", "hist")
+
+
+def plot_proposed_exit_kde_iso(cfg: Config, schedules: dict):
+    """Plot 14c: proposed@seg2_batch latency KDE by exit class, shared λ."""
+    return _iso_exit_split_fig(cfg, "proposed", schedules, "plot14c",
+                               "plot14c_proposed_exit_kde_iso", "kde")
+
+
+def plot_proposed_exit_hist_iso(cfg: Config, schedules: dict):
+    """Plot 14d: proposed@seg2_batch latency histogram by exit class, shared λ."""
+    return _iso_exit_split_fig(cfg, "proposed", schedules, "plot14d",
+                               "plot14d_proposed_exit_hist_iso", "hist")
 
 
 # --------------------------------------------------------------------------- #
@@ -1309,6 +1414,10 @@ def plot_all(cfg: Config, schedules: dict):
     plot_proposed_exit_hist(cfg, schedules)
     plot_naive_latency_composition(cfg, schedules)
     plot_proposed_latency_composition(cfg, schedules)
+    plot_naive_exit_kde_iso(cfg, schedules)
+    plot_naive_exit_hist_iso(cfg, schedules)
+    plot_proposed_exit_kde_iso(cfg, schedules)
+    plot_proposed_exit_hist_iso(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)

@@ -177,6 +177,21 @@ Outputs:
      on purpose; `gpu_wait` is included because the five components must sum to
      the latency. Skipped in saturated mode. Per-class component means and
      percentages are printed to stdout.
+  14. `plot14a`–`plot14d` (`..._naive_exit_kde_iso` / `..._naive_exit_hist_iso` /
+     `..._proposed_exit_kde_iso` / `..._proposed_exit_hist_iso`) — 13a–13d
+     again, pinned to ONE shared λ and annotated with the SLO deadline.
+     13a–13d give each runtime its own capacity×margin λ, which measures naive
+     and proposed at different offered loads and so cannot support a direct
+     comparison; 14a–14d replay both at `plots.exit_split_common_lambda`, so
+     14a/14b and 14c/14d sit side by side at iso-load with only the batching
+     structure differing. The red vertical line(s) from
+     `plots.exit_split_slo_ms` (a number or a list) mark the deadline, and the
+     per-class violation rates at each SLO are printed to stdout — that is the
+     number the pair argues about: proposed's non-exit component sits further
+     right, but what matters is how much of it crosses the line. λ is never
+     auto-derived here — pick a rate below the smallest capacity among the
+     compared runtimes and state it, with the SLO, in the caption. Unset λ
+     skips all four.
   14. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).

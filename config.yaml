@@ -193,6 +193,19 @@ plots:
   #   composition_bins: coarser than hist_bins on purpose — 80 thin bars cut
   #                     into five colors is unreadable at print size.
   composition_bins: 40
+  # Plot 14a-14d — 13a-13d again, but pinned to ONE shared λ and annotated with
+  # the SLO deadline, so naive (14a/14b) and proposed (14c/14d) are directly
+  # comparable: same offered load, only the batching structure differs. 13's
+  # per-runtime capacity×margin λ cannot support that comparison.
+  #   exit_split_common_lambda: the shared rate in req/s. NEVER auto-derived —
+  #     pick one below the SMALLEST capacity among the compared runtimes (see
+  #     Table A / plot4) and state it in the caption. 0 = saturated.
+  #     null -> all four figures are skipped.
+  #   exit_split_slo_ms: a number, or a list of numbers, drawn as red vertical
+  #     deadline line(s). null = no line. The per-class violation rates at each
+  #     SLO are printed to stdout — that is the number the figure argues about.
+  exit_split_common_lambda: 1450
+  exit_split_slo_ms: null
   exit_split_lambda: null
   exit_split_normalize: "mixture"
   exit_split_show_pooled: true
