@@ -38,10 +38,16 @@ batching:
   seg2_flush_mode: "fixed"
 
 arrivals:
-  # NOTE: unused as of the capacity−step refactor — plot2/3/3b/7/7b now each
-  # derive their own λ from lambda_sweep (each config's own measured capacity
-  # minus one sweep step; see gate/plots.py:_capacity_step_lambda). Kept here
-  # only in case a manual per-runtime override is wired back in later.
+  # Manual per-runtime operating points, used ONLY by plot11b
+  # (plot11b_latency_cdf_per_runtime_lambda). plot2/3/3b/7/7b derive their own
+  # λ from each config's measured capacity × capacity_margin_frac
+  # (gate/plots.py:_capacity_step_lambda) and ignore this block; plot11a uses
+  # the single shared plots.cdf_common_lambda instead.
+  # Per runtime: a rate in req/s, 0 = saturated (all arrivals at t=0, latency
+  # measured from the stage-1 op start), null = fall back to that runtime's
+  # capacity×margin λ. Remove the whole `lambda:` key to skip plot11b.
+  # Each runtime's λ is printed and written into its legend entry, since the
+  # curves are NOT iso-load — that is what plot11a is for; read them as a pair.
   lambda:
     plain: 0
     naive: 0

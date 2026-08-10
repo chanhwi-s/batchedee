@@ -361,13 +361,61 @@ def plot_latency_cdf(cfg: Config, schedules: dict):
     return _save(fig, cfg, "plot3_latency_cdf")
 
 
+def _cdf_entries(cfg: Config, schedules: dict):
+    """([(runtime, sched)], common_ids, B) for the plot11 pair."""
+    B = int(cfg.batching.seg2_batch)
+    entries = [("plain", schedules["plain"]),
+               ("naive", schedules["naive"]),
+               ("proposed", schedules["proposed"][B])]
+    return entries, metrics.common_completed([s for _, s in entries]), B
+
+
+def _manual_arrivals(cfg: Config, n: int, lam: float):
+    """(arrivals, origin, desc, mathtext) for an explicitly chosen λ — `desc`
+    is the plain-text stdout form, `mathtext` the figure form. 0/negative ->
+    saturated: all arrivals at t=0, latency measured from the stage-1 op start
+    (waiting behind the t=0 backlog is a setup artifact, not a runtime
+    property)."""
+    if lam <= 0:
+        return np.zeros(n, dtype=float), "stage1_start", "saturated", "saturated"
+    return (poisson_arrivals(n, lam, int(cfg.arrivals.seed)), "arrival",
+            f"lambda={lam:g} req/s", f"$\\lambda$={lam:g} req/s")
+
+
+def _latency_cdf_fig(cfg: Config, entries, common, per: dict, title: str,
+                     name: str, label_lambda: bool = False):
+    """Shared body of plot11a/11b: one empirical CDF per runtime.
+
+    `per` = {runtime: (arrivals, origin, desc, mathtext)}. With `label_lambda`
+    the legend carries each runtime's own operating point (11b, where they
+    differ).
+    """
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    for r, s in entries:
+        arr, origin, desc, math = per[r]
+        l = np.sort(metrics.latency_ms(s, arr, common, origin))
+        print(f"[{name}] {RUNTIME_LABELS[r]} @ {desc}: "
+              f"p50={np.percentile(l, 50):.2f} ms, "
+              f"p90={np.percentile(l, 90):.2f} ms, "
+              f"p99={np.percentile(l, 99):.2f} ms")
+        label = f"{RUNTIME_LABELS[r]} ({math})" if label_lambda \
+            else RUNTIME_LABELS[r]
+        ax.plot(l, np.arange(1, len(l) + 1) / len(l), color=RUNTIME_COLORS[r],
+                linestyle=RUNTIME_STYLES[r]["linestyle"], label=label)
+    ax.set_xlabel("Latency (ms)")
+    ax.set_ylabel("CDF")
+    ax.set_title(title)
+    ax.legend(loc="lower right")
+    return _save(fig, cfg, name)
+
+
 def plot_latency_cdf_common(cfg: Config, schedules: dict):
-    """Plot 11: empirical latency CDF with EVERY runtime replayed at ONE
+    """Plot 11a: empirical latency CDF with EVERY runtime replayed at ONE
     shared λ — the iso-load counterpart to plot3.
 
     plot3 puts each runtime at its own capacity×margin λ, so its curves mix two
     effects: the batching structure AND the different offered loads (proposed
-    sustains ~11% more req/s than plain, and is therefore measured at a higher
+    sustains ~6% more req/s than plain, and is therefore measured at a higher
     load). This figure removes the load term so the residual gap is attributable
     to batching alone — in particular to `proposed`'s seg2 queue wait, which
     naive does not pay because it flushes every seg1 batch's leftovers at once.
@@ -380,37 +428,61 @@ def plot_latency_cdf_common(cfg: Config, schedules: dict):
     """
     raw = cfg.get_path("plots.cdf_common_lambda", None)
     if raw is None:
-        print("[plot11] plots.cdf_common_lambda unset; skipped")
+        print("[plot11a] plots.cdf_common_lambda unset; skipped")
         return None
 
-    lam = float(raw)
+    entries, common, B = _cdf_entries(cfg, schedules)
     n = schedules["plain"].n_requests
-    B = int(cfg.batching.seg2_batch)
-    entries = [("plain", schedules["plain"]),
-               ("naive", schedules["naive"]),
-               ("proposed", schedules["proposed"][B])]
-    common = metrics.common_completed([s for _, s in entries])
-
-    if lam <= 0:
-        arr, origin, desc = np.zeros(n, dtype=float), "stage1_start", "saturated"
-    else:
-        arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
-                             "arrival", f"λ={lam:g} req/s")
-    print(f"[plot11] all runtimes at a SHARED {desc} "
+    got = _manual_arrivals(cfg, n, float(raw))
+    print(f"[plot11a] all runtimes at a SHARED {got[2]} "
           f"(proposed at bs2={B}); n={len(common)} common samples")
+    per = {r: got for r, _ in entries}
+    return _latency_cdf_fig(cfg, entries, common, per,
+                            f"Latency CDF at a Shared Load ({got[3]})",
+                            "plot11a_latency_cdf_common_lambda")
 
-    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+
+def plot_latency_cdf_per_runtime(cfg: Config, schedules: dict):
+    """Plot 11b: the same CDF with each runtime at its OWN manually chosen λ,
+    read from `arrivals.lambda` — the anti-iso-load counterpart to 11a.
+
+    Use this when the comparison you want is "each runtime at the load IT would
+    actually be operated at" (e.g. each one's sustainable rate read off plot4),
+    rather than a single rate the slowest runtime dictates. Because the offered
+    loads differ, the gaps here are NOT attributable to batching alone — that is
+    exactly what 11a is for; the two figures are meant to be read as a pair.
+
+    `arrivals.lambda`:
+      mapping {plain: …, naive: …, proposed: …} -> per-runtime rate (the
+        intended form; a missing/null entry falls back to that runtime's
+        capacity×margin λ, i.e. the plot3 convention, and says so on stdout)
+      scalar -> the same rate for every runtime (degenerates to 11a)
+      0 for a runtime -> that runtime saturated (latency from stage-1 start)
+      absent/null altogether -> the figure is skipped
+    Each runtime's λ is printed AND written into its legend entry, since the
+    curves are no longer comparable without it.
+    """
+    raw = cfg.get_path("arrivals.lambda", None)
+    if raw is None:
+        print("[plot11b] arrivals.lambda unset; skipped")
+        return None
+
+    entries, common, B = _cdf_entries(cfg, schedules)
+    n = schedules["plain"].n_requests
+    per = {}
     for r, s in entries:
-        l = np.sort(metrics.latency_ms(s, arr, common, origin))
-        print(f"[plot11] {RUNTIME_LABELS[r]}: p50={np.percentile(l, 50):.2f} ms, "
-              f"p90={np.percentile(l, 90):.2f} ms, p99={np.percentile(l, 99):.2f} ms")
-        ax.plot(l, np.arange(1, len(l) + 1) / len(l), color=RUNTIME_COLORS[r],
-                linestyle=RUNTIME_STYLES[r]["linestyle"], label=RUNTIME_LABELS[r])
-    ax.set_xlabel("Latency (ms)")
-    ax.set_ylabel("CDF")
-    ax.set_title(f"Latency CDF at a Shared Load ({desc})")
-    ax.legend(loc="lower right")
-    return _save(fig, cfg, "plot11_latency_cdf_common_lambda")
+        lam = raw.get(r, None) if isinstance(raw, dict) else raw
+        if lam is None:
+            lam = _capacity_step_lambda(cfg, s, common)
+            print(f"[plot11b] arrivals.lambda.{r} unset -> falling back to "
+                  f"{r}'s capacity×margin λ = {lam:g} req/s")
+        per[r] = _manual_arrivals(cfg, n, float(lam))
+    print(f"[plot11b] per-runtime loads (proposed at bs2={B}); "
+          f"n={len(common)} common samples")
+    return _latency_cdf_fig(cfg, entries, common, per,
+                            "Latency CDF at Per-Runtime Loads",
+                            "plot11b_latency_cdf_per_runtime_lambda",
+                            label_lambda=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -1050,6 +1122,7 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_cdf(cfg, schedules)
     plot_latency_cdf_sweep(cfg, schedules)
     plot_latency_cdf_common(cfg, schedules)
+    plot_latency_cdf_per_runtime(cfg, schedules)
     plot_latency_hist_common(cfg, schedules)
     plot_latency_hist(cfg, schedules)
     plot_naive_exit_kde(cfg, schedules)
