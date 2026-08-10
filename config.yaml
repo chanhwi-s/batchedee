@@ -208,8 +208,8 @@ plots:
   #     the tail past the SLO is exactly what is being argued about, so a p99
   #     cut would hide the evidence. Anything still beyond it is reported on
   #     stdout. null -> fall back to plot13's kde_clip_percentile behavior.
-  exit_split_common_lambda: 1450
-  exit_split_slo_ms: null
+  exit_split_common_lambda: 1650
+  exit_split_slo_ms: 50
   exit_split_xlim_ms: 100
   exit_split_lambda: null
   exit_split_normalize: "mixture"
