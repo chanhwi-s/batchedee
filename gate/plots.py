@@ -13,10 +13,12 @@ import numpy as np
 from . import metrics
 from . import plot_style as ps
 from .arrivals import poisson_arrivals
-from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS, FIG_DOUBLE,
-                         FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS, RUNTIME_LABELS,
-                         RUNTIME_ORDER, RUNTIME_STYLES, STAGE1_SWATCH,
-                         STAGE2_SWATCH, b2_label, lighten, proposed_shades)
+from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS, EXIT_CLASS_COLORS,
+                         EXIT_CLASS_LABELS, EXIT_CLASS_ORDER, EXIT_CLASS_STYLES,
+                         FIG_DOUBLE, FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS,
+                         RUNTIME_LABELS, RUNTIME_ORDER, RUNTIME_STYLES,
+                         STAGE1_SWATCH, STAGE2_SWATCH, b2_label, lighten,
+                         proposed_shades)
 from .util import Config, lambda_grid, slo_grid_ms
 
 ps.apply_style()
@@ -485,6 +487,207 @@ def plot_latency_hist(cfg: Config, schedules: dict):
 
 
 # --------------------------------------------------------------------------- #
+# Plot 13a/13b: NAIVE ONLY — latency split by per-sample exit class.
+#
+# Why naive's pooled curve (plot2 / plot12b) looks unimodal even though two
+# populations exist: in naive a non-exiting sample's ONLY extra cost is its own
+# batch's seg2 op, dispatched immediately after that batch's seg1 (dynamic size
+# = per-batch non-exit count). So the two classes share the two dominant AND
+# most variable latency terms — batch-formation wait and GPU queue wait — and
+# the conditionals are the same distribution shifted by one small seg2 service
+# time. The shift is fixed and small while the shared spread has a floor
+# (formation wait ~ (S-1)/2λ dominates at low λ, queue wait at high λ), so the
+# modes never separate by the ~2 pooled sd a visible bimodal curve needs.
+#
+# These figures stop relying on the pooled curve to resolve the split and draw
+# the two conditionals explicitly (exit = purple, non-exit = red), printing the
+# separation (mean gap, pooled sd, Cohen's d) to stdout for the caption.
+#   13a: KDE       — same bandwidth / x-clip convention as plot2
+#   13b: histogram — same bin convention as plot12 (KDE-free)
+# --------------------------------------------------------------------------- #
+def _naive_exit_mask(sched) -> np.ndarray:
+    """Bool mask over request ids: True where the sample exits at stage 1.
+
+    In a naive schedule a sample COMPLETES at a seg1 op iff the LPH head was
+    confident enough (conf >= early_exit.confidence_threshold); every other
+    sample completes at the seg2 op that follows its own seg1 batch.
+    """
+    mask = np.zeros(sched.n_requests, dtype=bool)
+    for op in sched.ops:
+        if op.kind == "seg1" and len(op.completes):
+            mask[op.completes] = True
+    return mask
+
+
+def _naive_exit_lambda(cfg: Config, schedules: dict, common) -> tuple:
+    """(arrivals, origin, desc, short) for the naive exit-split figures.
+    `desc` is the full stdout description, `short` the compact form that fits
+    in the 3.5-inch figure title.
+
+    `plots.naive_exit_lambda`:
+      null / "auto" -> naive's own capacity×margin λ (same operating point as
+                       plot2 / plot3 / plot12b, so 13a is directly comparable
+                       with naive's pooled curve there)
+      number > 0    -> manual override at that rate
+      0             -> saturated (all arrivals at t=0; latency measured from
+                       the stage-1 op start, as elsewhere)
+    """
+    n = schedules["naive"].n_requests
+    raw = cfg.get_path("plots.naive_exit_lambda", None)
+    if raw is None or raw == "auto":
+        lam = _capacity_step_lambda(cfg, schedules["naive"], common)
+        src = "capacity×margin"
+    else:
+        lam = float(raw)
+        src = "manual"
+    if lam <= 0:
+        return np.zeros(n, dtype=float), "stage1_start", "saturated", "saturated"
+    return (poisson_arrivals(n, lam, int(cfg.arrivals.seed)), "arrival",
+            f"lambda={lam:g} req/s ({src})", f"$\\lambda$={lam:g} req/s")
+
+
+def _naive_exit_split(cfg: Config, schedules: dict, name: str):
+    """[(class, latency_ms)] for naive's exit / non-exit samples + the pooled
+    array and the operating-point description.
+
+    Restricted to the SAME common completed set as plot2/3/12 so the pooled
+    curve here is identical to naive's curve there.
+    Returns (data, pooled_ms, short_desc).
+    """
+    sched = schedules["naive"]
+    B = int(cfg.batching.seg2_batch)
+    common = metrics.common_completed(
+        [schedules["plain"], sched, schedules["proposed"][B]])
+    arr, origin, desc, short = _naive_exit_lambda(cfg, schedules, common)
+
+    pooled = metrics.latency_ms(sched, arr, common, origin)
+    is_exit = _naive_exit_mask(sched)[common]
+    data = [("exit", pooled[is_exit]), ("nonexit", pooled[~is_exit])]
+
+    ex, nx = data[0][1], data[1][1]
+    print(f"[{name}] naive at {desc}; n={len(pooled)} common samples "
+          f"(exit {len(ex)} = {100 * len(ex) / max(len(pooled), 1):.1f}%, "
+          f"non-exit {len(nx)})")
+    if len(ex) > 1 and len(nx) > 1:
+        gap = float(nx.mean() - ex.mean())
+        pooled_sd = float(np.sqrt((ex.var() + nx.var()) / 2))
+        print(f"[{name}] exit mean={ex.mean():.2f} ms (sd {ex.std():.2f}), "
+              f"non-exit mean={nx.mean():.2f} ms (sd {nx.std():.2f})")
+        print(f"[{name}] mode gap={gap:.2f} ms, pooled sd={pooled_sd:.2f} ms, "
+              f"Cohen's d={gap / pooled_sd if pooled_sd else float('nan'):.2f} "
+              f"(d >~ 2 needed for a visibly bimodal pooled curve)")
+    return data, pooled, short
+
+
+def _exit_class_marks(ax, data):
+    """Dashed vertical line at each class mean (plots.naive_exit_marks)."""
+    for c, l in data:
+        if len(l):
+            ax.axvline(float(l.mean()), color=EXIT_CLASS_COLORS[c],
+                       linestyle=":", linewidth=0.8, alpha=0.8, zorder=1)
+
+
+def plot_naive_exit_kde(cfg: Config, schedules: dict):
+    """Plot 13a: KDE of naive's per-sample latency, split by exit class.
+
+    `plots.naive_exit_normalize`:
+      "mixture" (default) -- each class KDE is scaled by its share of the
+        samples, so the two curves ADD UP to the pooled naive density (drawn in
+        gray). This is the view that explains the missing bimodality: the sum
+        of two heavily overlapping components has no dip.
+      "each" -- each class normalized to unit area instead; shapes are easier
+        to compare but the curves no longer sum to the pooled density.
+    """
+    data, pooled, desc = _naive_exit_split(cfg, schedules, "plot13a")
+    bw = cfg.get_path("plots.kde_bandwidth", 0.4)
+    norm = str(cfg.get_path("plots.naive_exit_normalize", "mixture")).lower()
+    if norm not in ("mixture", "each"):
+        raise ValueError("plots.naive_exit_normalize must be 'mixture' or "
+                         f"'each', got {norm!r}")
+    show_pooled = bool(cfg.get_path("plots.naive_exit_show_pooled", True))
+
+    lo = float(pooled.min())
+    hi = _kde_hi(cfg, [pooled], "plot13a")
+    grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    if show_pooled and norm == "mixture":
+        ax.plot(grid, _kde(pooled, grid, bw), color=EXIT_CLASS_COLORS["pooled"],
+                linestyle=EXIT_CLASS_STYLES["pooled"]["linestyle"],
+                linewidth=1.0, label=EXIT_CLASS_LABELS["pooled"], zorder=2)
+    for c, l in data:
+        if len(l) < 2:
+            continue
+        w = len(l) / len(pooled) if norm == "mixture" else 1.0
+        ax.plot(grid, w * _kde(l, grid, bw), color=EXIT_CLASS_COLORS[c],
+                linestyle=EXIT_CLASS_STYLES[c]["linestyle"],
+                label=EXIT_CLASS_LABELS[c], zorder=3)
+    if bool(cfg.get_path("plots.naive_exit_marks", True)):
+        _exit_class_marks(ax, data)
+
+    ax.set_xlim(lo, hi)
+    ax.set_xlabel("Latency (ms)")
+    ax.set_ylabel("Density")
+    ax.set_title(f"Naive Latency by Exit Class ({desc})")
+    ax.legend(loc="upper right")
+    return _save(fig, cfg, "plot13a_naive_exit_kde")
+
+
+def plot_naive_exit_hist(cfg: Config, schedules: dict):
+    """Plot 13b: histogram counterpart of 13a — no smoothing at all.
+
+    `plots.naive_exit_hist_stacked` (default true): the classes are disjoint
+    subsets of the same population, so stacking them reproduces naive's pooled
+    histogram exactly and shows how the two components fill in each other's
+    gaps. Set false for an overlaid (alpha-blended) comparison of the two
+    shapes instead. Bins/x-range follow plot12 (plots.hist_bins, the KDE
+    x-clip); samples past the clip fall outside the edges and are dropped.
+    """
+    data, pooled, desc = _naive_exit_split(cfg, schedules, "plot13b")
+    bins = int(cfg.get_path("plots.hist_bins", 80))
+    density = bool(cfg.get_path("plots.hist_density", False))
+    stacked = bool(cfg.get_path("plots.naive_exit_hist_stacked", True))
+
+    lo = float(pooled.min())
+    hi = _kde_hi(cfg, [pooled], "plot13b")
+    edges = np.linspace(lo, hi, bins + 1)
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    order = [c for c in EXIT_CLASS_ORDER]
+    lats = [dict(data)[c] for c in order]
+    colors = [EXIT_CLASS_COLORS[c] for c in order]
+    labels = [EXIT_CLASS_LABELS[c] for c in order]
+    if stacked:
+        _, _, containers = ax.hist(
+            lats, bins=edges, density=density, stacked=True,
+            histtype="stepfilled", color=colors, label=labels,
+            edgecolor="white", linewidth=0.3)
+        # per-class hatch (ax.hist takes no hatch list) — keeps the stack
+        # readable when the figure is printed in grayscale
+        for c, cont in zip(order, containers):
+            h = EXIT_CLASS_STYLES[c]["hatch"]
+            if h:
+                for patch in np.atleast_1d(cont):
+                    patch.set_hatch(h)
+    else:
+        for c, l in data:
+            ax.hist(l, bins=edges, density=density, histtype="stepfilled",
+                    alpha=0.35, color=EXIT_CLASS_COLORS[c],
+                    edgecolor=EXIT_CLASS_COLORS[c], linewidth=1.1,
+                    hatch=EXIT_CLASS_STYLES[c]["hatch"],
+                    label=EXIT_CLASS_LABELS[c])
+    if bool(cfg.get_path("plots.naive_exit_marks", True)):
+        _exit_class_marks(ax, data)
+
+    ax.set_xlim(lo, hi)
+    ax.set_xlabel("Latency (ms)")
+    ax.set_ylabel("Density" if density else "Count")
+    ax.set_title(f"Naive Latency by Exit Class ({desc})")
+    ax.legend(loc="upper right")
+    return _save(fig, cfg, "plot13b_naive_exit_hist")
+
+
+# --------------------------------------------------------------------------- #
 # Plot 4: load vs latency (+ divergence detection)
 # --------------------------------------------------------------------------- #
 def plot_load_latency(cfg: Config, schedules: dict):
@@ -797,6 +1000,8 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_cdf_common(cfg, schedules)
     plot_latency_hist_common(cfg, schedules)
     plot_latency_hist(cfg, schedules)
+    plot_naive_exit_kde(cfg, schedules)
+    plot_naive_exit_hist(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)

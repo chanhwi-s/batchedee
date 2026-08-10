@@ -128,7 +128,24 @@ Outputs:
      seg2 queue wait). λ is never auto-derived — pick a rate below the smallest
      capacity in Table A and state it in the caption. p50/p90/p99 per runtime
      are printed to stdout.
-  13. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
+  13. `plot13a_naive_exit_kde` / `plot13b_naive_exit_hist` — **naive only**,
+     per-sample latency split by exit class (purple = exited at stage 1,
+     red = ran stage 1 + stage 2), as a KDE and as a raw histogram. Explains
+     why naive's pooled curve in plot2/plot12b is unimodal: the two classes
+     differ by exactly one seg2 service time (~2–3 ms at `seg1_batch`=16)
+     while both share the formation + queue wait that carries almost all the
+     variance, so the components overlap far too much to resolve. 13a's
+     `"mixture"` normalization scales each class KDE by its sample share so
+     the two sum to the pooled density (gray); 13b stacks the two disjoint
+     classes so they reproduce naive's pooled histogram. λ defaults to naive's
+     capacity×margin (same point as plot2/3/12b); override with
+     `plots.naive_exit_lambda`. Mean gap, pooled sd and Cohen's d are printed
+     to stdout — quote them in the caption. Setting `naive_exit_lambda: 0`
+     (saturated: latency measured from the stage-1 op start, dropping the
+     shared waits) is what actually separates the modes — Cohen's d goes from
+     ~0.7 to ~4.6 — useful as the "the two populations really are there"
+     companion figure.
+  14. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).
 

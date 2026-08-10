@@ -144,3 +144,34 @@ plots:
   # cdf_common_lambda set (else skipped, like plot11); 12b always renders.
   hist_bins: 80
   hist_density: false
+  # Plot 13a/13b (naive ONLY, latency split by per-sample exit class —
+  # purple = exits at stage 1, red = runs stage 1 + stage 2). Explains why
+  # naive's pooled curve in plot2/12b shows no bimodality: the classes differ
+  # only by one seg2 service time (~2-3 ms) while both share the formation +
+  # queue wait that carries almost all of the variance. Separation stats
+  # (mean gap, pooled sd, Cohen's d) are printed to stdout — quote them in the
+  # caption.
+  #   naive_exit_lambda      : null/"auto" -> naive's capacity×margin λ (same
+  #                            operating point as plot2/3/12b, so the pooled
+  #                            curve matches naive's curve there);
+  #                            number -> fixed rate;  0 -> saturated.
+  #                            0 is the only setting that actually SPLITS the
+  #                            modes (latency is then measured from the stage-1
+  #                            op start, which removes the shared formation +
+  #                            queue wait: d jumps 0.7 -> 4.6 here). Use it for
+  #                            a "the two populations do exist" figure; keep
+  #                            null for the honest end-to-end view.
+  #   naive_exit_normalize   : "mixture" -> class KDEs scaled by their sample
+  #                            share, so they sum to the pooled density (shown
+  #                            in gray); "each" -> each normalized to unit area
+  #   naive_exit_show_pooled : draw the pooled naive KDE as a gray reference
+  #                            (only meaningful with "mixture")
+  #   naive_exit_hist_stacked: 13b stacks the two disjoint classes (sums to
+  #                            naive's pooled histogram); false -> overlaid
+  #   naive_exit_marks       : dotted vertical line at each class mean
+  # Bandwidth / bins / x-range are inherited from kde_* and hist_bins above.
+  naive_exit_lambda: null
+  naive_exit_normalize: "mixture"
+  naive_exit_show_pooled: true
+  naive_exit_hist_stacked: true
+  naive_exit_marks: true
