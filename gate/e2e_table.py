@@ -32,7 +32,7 @@ load curve) plus the mean/p99 latency at that point and the capacity-based
 divergence λ. Computed on the common set over ALL configurations. plot2b
 draws each latency distribution at these knee λ values.
 
-Peak goodput (plot1c + peak_goodput.{json,csv}): for each runtime and each of
+Peak goodput (plot1d + peak_goodput.{json,csv}): for each runtime and each of
 the two fixed SLOs, goodput is scanned over the whole lambda_sweep grid and
 the maximum (with its argmax λ) is reported — each runtime at its OWN
 goodput-maximizing operating point, complementing the fixed-λ Table B view.
@@ -158,7 +158,7 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int],
     ax.set_title("Peak Goodput")
     ax.margins(y=0.6)
     ax.legend(ncol=2, loc="upper left", fontsize=6)
-    return _save(fig, cfg, "plot1c_peak_goodput_bars")
+    return _save(fig, cfg, "plot1d_peak_goodput_bars")
 
 
 def generate(cfg: Config, scheds: dict) -> dict:

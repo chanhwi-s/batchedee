@@ -107,6 +107,16 @@ plots:
   # slo_goodput_lambda:
   #   plain: 1600                                # plot1a: λ anchored on plain
   #   naive: 1690                                # plot1b: λ anchored on naive
+  #   proposed: 1720                             # plot1c: λ anchored on proposed
+  # plot1c anchors on `proposed`, which is a seg2_batch SWEEP, so one variant has
+  # to be picked to read a capacity off:
+  #   "max_capacity" (default) -> the b2 that sustains the highest load, i.e.
+  #                               the true right edge of the whole design space
+  #   "config"                 -> batching.seg2_batch
+  #   a number                 -> that b2 (must be in seg2_batch_sweep)
+  # Every b2's measured capacity is printed either way — state the chosen one in
+  # the caption, since the figure's λ is only meaningful next to it.
+  slo_goodput_b2: "max_capacity"
   # Latency KDE (plot2/plot2b): bandwidth as a fraction of the data std
   # (scipy bw_method). Larger = smoother, smaller = spikier; null = Scott rule.
   kde_bandwidth: 0.3

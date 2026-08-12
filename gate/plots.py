@@ -145,6 +145,42 @@ def _manual_arrivals_per_runtime(cfg: Config, entries, common, name: str):
 # Plot 1a/1b: Goodput under Latency SLOs — plain + naive + the proposed b2 sweep,
 # the two figures differing only in the λ the whole panel is replayed at.
 # --------------------------------------------------------------------------- #
+def _slo_goodput_anchor(cfg: Config, schedules: dict, anchor_runtime: str,
+                        common):
+    """(schedule, note) whose capacity sets a plot1a/1b/1c figure's λ.
+
+    plain and naive have a single schedule. `proposed` is a {seg2_batch:
+    Schedule} sweep, so plot1c has to pick one — the operating point it wants is
+    the highest load ANY proposed configuration sustains, i.e. the b2 with the
+    largest measured capacity. `plots.slo_goodput_b2` pins a specific b2 instead
+    ("config" = `batching.seg2_batch`, a number = that b2). Whichever rule is
+    used, the chosen b2 and how it compares with the sweep is logged, because
+    the figure's λ is only meaningful next to that choice.
+    """
+    if anchor_runtime != "proposed":
+        return schedules[anchor_runtime], anchor_runtime
+
+    prop = schedules["proposed"]
+    caps = {B: metrics.capacity_lambda(s, common) for B, s in prop.items()}
+    best = max(caps, key=caps.get)
+    pick = cfg.get_path("plots.slo_goodput_b2", "max_capacity")
+    if pick == "max_capacity":
+        B = best
+    elif pick == "config":
+        B = int(cfg.batching.seg2_batch)
+    else:
+        B = int(pick)
+    if B not in prop:
+        raise ValueError(f"plots.slo_goodput_b2 -> bs2={B}, not in the sweep "
+                         f"{sorted(prop)}")
+    print("[plot1c] proposed capacities: " +
+          ", ".join(f"bs2={b}: {caps[b]:.0f}" for b in sorted(caps)))
+    note = f"proposed bs2={B}"
+    if B != best:
+        note += f" (bs2={best} sustains more: {caps[best]:.0f} req/s)"
+    return prop[B], note
+
+
 def _slo_goodput_pair(cfg: Config, schedules: dict, anchor_runtime: str, name: str):
     """One SLO-vs-goodput figure: BOTH baselines (plain, naive) + the proposed
     b2 sweep, all replayed on the same arrival trace at the figure's λ.
@@ -171,9 +207,11 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, anchor_runtime: str, name: s
     if raw is None or raw == "auto":
         lams = lambda_grid(cfg)
         step = float(cfg.arrivals["lambda_sweep"]["step"])
-        cap = metrics.capacity_lambda(schedules[anchor_runtime], common)
+        anchor_sched, anchor_note = _slo_goodput_anchor(cfg, schedules,
+                                                        anchor_runtime, common)
+        cap = metrics.capacity_lambda(anchor_sched, common)
         lam = float(lams[int(np.argmin(np.abs(lams - (cap - step))))])
-        src = f"auto: {anchor_runtime} capacity {cap:.1f} − step"
+        src = f"auto: {anchor_note} capacity {cap:.1f} − step"
     else:
         lam = float(raw)
         src = "manual override"
@@ -203,12 +241,25 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, anchor_runtime: str, name: s
 
 
 def plot_slo_goodput(cfg: Config, schedules: dict):
-    """Plot 1a and 1b both show Plain + Naive + the proposed b2 sweep; they
-    differ only in the operating point (λ anchored on plain's capacity for 1a,
-    on naive's for 1b). Within a figure every runtime shares one trace."""
+    """Plots 1a/1b/1c: identical figures — Plain + Naive + the whole proposed b2
+    sweep, every curve on one shared arrival trace — differing ONLY in which
+    runtime's capacity sets the operating point:
+
+      1a → plain's      (the load plain can just barely still serve)
+      1b → naive's
+      1c → proposed's   (the highest load any configuration here sustains)
+
+    Read as a series they answer "who still meets which SLO as the offered load
+    is raised to each design's own ceiling in turn". 1c is the extreme end: at
+    proposed's capacity both baselines are past their divergence point, so their
+    goodput collapses across the whole SLO range while the proposed curves stay
+    up — which is the claim the paper is making, stated at its strongest.
+    """
     a = _slo_goodput_pair(cfg, schedules, "plain", "plot1a_slo_goodput_vs_plain")
     b = _slo_goodput_pair(cfg, schedules, "naive", "plot1b_slo_goodput_vs_naive")
-    return a, b
+    c = _slo_goodput_pair(cfg, schedules, "proposed",
+                          "plot1c_slo_goodput_vs_proposed")
+    return a, b, c
 
 
 # --------------------------------------------------------------------------- #
