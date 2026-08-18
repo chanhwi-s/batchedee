@@ -18,8 +18,8 @@ from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS, EXIT_CLASS_COLORS,
                          EXIT_CLASS_ORDER, EXIT_CLASS_STYLES, FIG_DOUBLE,
                          FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS, RUNTIME_LABELS,
                          RUNTIME_ORDER, RUNTIME_STYLES, SLO_COLOR,
-                         SLO_SHADE_ALPHA, SLO_SHADE_HEIGHT, STAGE1_SWATCH,
-                         STAGE2_SWATCH, b2_label, lighten, proposed_shades)
+                         SLO_FILL_ALPHA, STAGE1_SWATCH, STAGE2_SWATCH,
+                         b2_label, lighten, proposed_shades)
 from .util import Config, lambda_grid, slo_grid_ms
 
 ps.apply_style()
@@ -818,24 +818,14 @@ def _slo_values(slo_ms):
     return sorted(float(v) for v in seq)
 
 
-def _slo_marks(ax, slo_ms, hi=None, pooled=None, annotate=False):
-    """Red deadline rule(s), the violating region washed in, and the violation
-    share called out in text (plot14).
-
-    Everything to the right of the SLO is a missed deadline, so it gets a red
-    wash — the figure is about how much mass sits there, and a bare line leaves
-    the reader integrating by eye. The wash is a band along the bottom
-    (`SLO_SHADE_HEIGHT` of the axes) rather than the full height, so it never
-    tints the distributions themselves. With `annotate` and `pooled`, the share
-    is printed on the plot too, since that number is the point.
-    """
+def _slo_marks(ax, slo_ms, pooled=None, annotate=False):
+    """Red deadline rule(s) plus, with `annotate`, the violated share in text
+    (plot14). The violating MASS is filled separately — `_slo_fill_area` for a
+    KDE, `_slo_color_bars` for a histogram — so that what is coloured is the
+    same quantity as the number printed here."""
     values = _slo_values(slo_ms)
     if not values:
         return
-    if hi is not None:
-        ax.axvspan(values[0], hi, ymin=0, ymax=SLO_SHADE_HEIGHT,
-                   color=SLO_COLOR, alpha=SLO_SHADE_ALPHA, linewidth=0,
-                   zorder=0)
     for i, v in enumerate(values):
         ax.axvline(v, color=SLO_COLOR, linestyle="-", linewidth=1.1,
                    alpha=0.9, zorder=4, label="SLO" if i == 0 else None)
@@ -844,6 +834,44 @@ def _slo_marks(ax, slo_ms, hi=None, pooled=None, annotate=False):
                         for v in values)
         ax.text(0.98, 0.62, txt, transform=ax.transAxes, ha="right", va="top",
                 fontsize=7, color=SLO_COLOR, zorder=5)
+
+
+def _slo_fill_area(ax, slo_ms, grid, density):
+    """Fill the area under the pooled density beyond the deadline (plot14a/14c).
+
+    That area is exactly the violated fraction, so the red region and the
+    printed percentage are the same number rendered two ways. Filled under the
+    POOLED curve, not the per-class ones: the class densities are mixture
+    components and their areas would not add up to the reported share. Drawn
+    below the curves so nothing is obscured.
+    """
+    values = _slo_values(slo_ms)
+    if not values:
+        return
+    m = grid >= values[0]
+    if not m.any():
+        return
+    ax.fill_between(grid[m], 0, density[m], color=SLO_COLOR,
+                    alpha=SLO_FILL_ALPHA, linewidth=0, zorder=1)
+
+
+def _slo_color_bars(containers, edges, slo_ms):
+    """Recolour every histogram bar past the deadline red (plot14b/14d).
+
+    The KDE counterpart of `_slo_fill_area`. Needs `histtype="bar"` — with
+    "stepfilled" matplotlib returns one polygon per dataset, not one patch per
+    bin, and individual bars cannot be addressed.
+    """
+    values = _slo_values(slo_ms)
+    if not values:
+        return
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    for cont in containers:
+        for c, patch in zip(centers, cont):
+            if c > values[0]:
+                patch.set_facecolor(SLO_COLOR)
+                patch.set_edgecolor(SLO_COLOR)
+                patch.set_hatch(None)
 
 
 def _exit_split_title(label: str, desc: str, simple: bool) -> str:
@@ -884,9 +912,11 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _slo_marks(ax, slo_ms, hi=hi, pooled=pooled, annotate=simple)
+    pooled_density = _kde(pooled, grid, bw)
+    _slo_fill_area(ax, slo_ms, grid, pooled_density)
+    _slo_marks(ax, slo_ms, pooled=pooled, annotate=simple)
     if show_pooled and norm == "mixture":
-        ax.plot(grid, _kde(pooled, grid, bw), color=EXIT_CLASS_COLORS["pooled"],
+        ax.plot(grid, pooled_density, color=EXIT_CLASS_COLORS["pooled"],
                 linestyle=EXIT_CLASS_STYLES["pooled"]["linestyle"],
                 linewidth=1.0, zorder=2,
                 label="All" if simple else EXIT_CLASS_LABELS["pooled"])
@@ -927,13 +957,17 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     edges = np.linspace(lo, hi, bins + 1)
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _slo_marks(ax, slo_ms, hi=hi, pooled=pooled, annotate=simple)
+    _slo_marks(ax, slo_ms, pooled=pooled, annotate=simple)
     order = list(EXIT_CLASS_ORDER)
     by_class = dict(data)
+    # "bar" gives one patch per bin, which _slo_color_bars needs; "stepfilled"
+    # collapses each dataset into a single polygon.
+    htype = "bar" if _slo_values(slo_ms) else "stepfilled"
+    containers = []
     if stacked:
         _, _, containers = ax.hist(
             [by_class[c] for c in order], bins=edges, density=density,
-            stacked=True, histtype="stepfilled",
+            stacked=True, histtype=htype,
             color=[EXIT_CLASS_COLORS[c] for c in order],
             label=[_exit_class_label(c, simple) for c in order],
             edgecolor="white", linewidth=0.3)
@@ -943,15 +977,18 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
         for c, cont in zip(order, containers):
             h = None if simple else EXIT_CLASS_STYLES[c]["hatch"]
             if h:
-                for patch in np.atleast_1d(cont):
+                for patch in cont:
                     patch.set_hatch(h)
     else:
         for c, l in data:
-            ax.hist(l, bins=edges, density=density, histtype="stepfilled",
-                    alpha=0.35, color=EXIT_CLASS_COLORS[c],
-                    edgecolor=EXIT_CLASS_COLORS[c], linewidth=1.1,
-                    hatch=None if simple else EXIT_CLASS_STYLES[c]["hatch"],
-                    label=_exit_class_label(c, simple))
+            _, _, cont = ax.hist(
+                l, bins=edges, density=density, histtype=htype,
+                alpha=0.35, color=EXIT_CLASS_COLORS[c],
+                edgecolor=EXIT_CLASS_COLORS[c], linewidth=1.1,
+                hatch=None if simple else EXIT_CLASS_STYLES[c]["hatch"],
+                label=_exit_class_label(c, simple))
+            containers.append(cont)
+    _slo_color_bars(containers, edges, slo_ms)
 
     ax.set_xlim(lo, hi)
     ax.set_xlabel("Latency (ms)")

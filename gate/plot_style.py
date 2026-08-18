@@ -71,14 +71,13 @@ EXIT_CLASS_STYLES = {                       # KDE linestyle / histogram hatch
     "pooled":  {"linestyle": ":",  "hatch": None},
 }
 
-# SLO deadline marker (plot14): a red rule plus a wash over the violating
-# region. Deliberately not one of the class hues — it must read as an
-# annotation, not another data series. The wash is a band along the bottom
-# rather than the full panel height: a full-height tint sits behind the curves
-# and shifts their perceived colour, while a bottom band reads as a ruler.
+# SLO deadline marker (plot14): a red rule, plus the violating mass itself
+# filled in red — the area under the pooled density past the deadline in the
+# KDE, the bars past it in the histogram. That area IS the reported violation
+# share, so the shading and the printed number are the same quantity; a tint
+# over the whole region to the right would only mark an interval.
 SLO_COLOR = "#E41A1C"
-SLO_SHADE_ALPHA = 0.18
-SLO_SHADE_HEIGHT = 0.12     # fraction of the axes height, measured from y=0
+SLO_FILL_ALPHA = 0.30       # KDE area fill (curves stay legible on top)
 
 IDLE_COLOR = "#E4E4E4"      # timeline idle segments
 STAGE2_TINT = 0.45          # blend-toward-white fraction for stage-2 marks
