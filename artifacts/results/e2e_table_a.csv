@@ -1,4 +1,4 @@
 runtime,accuracy_pct,saturated_throughput_sps,divergence_lambda
-plain,85.05,1610.7,1610.7
-naive,82.73,1664.8,1664.8
-proposed,82.73,1721.2,1721.2
+plain,85.05,1605.7,1605.7
+naive,82.73,1663.2,1663.2
+proposed,82.73,1720.2,1720.2
