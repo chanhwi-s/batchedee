@@ -204,6 +204,10 @@ Outputs:
      (default 100 ms) instead of clipped at a percentile the way plot13 is:
      all four panels need one shared scale, and the tail past the SLO is the
      evidence, so a p99 cut would hide it.
+     14a–14d are drawn in a stripped-down style: runtime name only in the
+     title, short class labels, no pooled reference curve, no hatching — λ, the
+     SLO and the class definitions belong in the caption. The region past the
+     SLO is washed in red and the violated share is printed on the plot.
      `plot14e_naive_latency_composition_iso` /
      `plot14f_proposed_latency_composition_iso` are 13e/13f under the same
      treatment — per-bin composition at the shared λ, fixed x-axis, SLO line on

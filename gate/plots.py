@@ -14,11 +14,12 @@ from . import metrics
 from . import plot_style as ps
 from .arrivals import poisson_arrivals
 from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS, EXIT_CLASS_COLORS,
-                         EXIT_CLASS_LABELS, EXIT_CLASS_ORDER, EXIT_CLASS_STYLES,
-                         FIG_DOUBLE, FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS,
-                         RUNTIME_LABELS, RUNTIME_ORDER, RUNTIME_STYLES,
-                         SLO_COLOR, STAGE1_SWATCH, STAGE2_SWATCH, b2_label,
-                         lighten, proposed_shades)
+                         EXIT_CLASS_LABELS, EXIT_CLASS_LABELS_SHORT,
+                         EXIT_CLASS_ORDER, EXIT_CLASS_STYLES, FIG_DOUBLE,
+                         FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS, RUNTIME_LABELS,
+                         RUNTIME_ORDER, RUNTIME_STYLES, SLO_COLOR,
+                         SLO_SHADE_ALPHA, STAGE1_SWATCH, STAGE2_SWATCH,
+                         b2_label, lighten, proposed_shades)
 from .util import Config, lambda_grid, slo_grid_ms
 
 ps.apply_style()
@@ -220,7 +221,8 @@ def _slo_goodput_pair(cfg: Config, schedules: dict, anchor_runtime: str, name: s
     else:
         arr, origin, desc = (poisson_arrivals(n, lam, int(cfg.arrivals.seed)),
                              "arrival", f"λ={lam:g} req/s")
-    print(f"[{name}] Plain vs Naive vs Proposed at {desc} ({src})")
+    print(f"[{name}] " + " vs ".join(RUNTIME_LABELS[r] for r in RUNTIME_ORDER)
+          + f" at {desc} ({src})")
     slo = slo_grid_ms(cfg)
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
@@ -808,30 +810,54 @@ def _exit_split_hi(cfg: Config, pooled: np.ndarray, name: str, xmax=None):
     return hi
 
 
-def _slo_marks(ax, slo_ms):
-    """Vertical red deadline line(s) at the SLO(s) (plot14).
-
-    `slo_ms` is a number or a list of numbers in ms; only the first gets a
-    legend entry so a two-SLO figure does not carry a redundant label.
-    """
+def _slo_values(slo_ms):
+    """`slo_ms` (a number, a list, or None) -> sorted list of floats."""
     if slo_ms is None:
+        return []
+    seq = slo_ms if isinstance(slo_ms, (list, tuple)) else [slo_ms]
+    return sorted(float(v) for v in seq)
+
+
+def _slo_marks(ax, slo_ms, hi=None, pooled=None, annotate=False):
+    """Red deadline rule(s), the violating region washed in, and the violation
+    share called out in text (plot14).
+
+    Everything to the right of the SLO is a missed deadline, so it gets a light
+    red span — the figure is about how much mass sits there, and an unfilled
+    line leaves the reader integrating by eye. With `annotate` and `pooled`,
+    the share is printed on the plot as well, since that number is the point.
+    """
+    values = _slo_values(slo_ms)
+    if not values:
         return
-    values = [float(v) for v in (slo_ms if isinstance(slo_ms, (list, tuple))
-                                 else [slo_ms])]
-    for i, v in enumerate(sorted(values)):
+    if hi is not None:
+        ax.axvspan(values[0], hi, color=SLO_COLOR, alpha=SLO_SHADE_ALPHA,
+                   linewidth=0, zorder=0)
+    for i, v in enumerate(values):
         ax.axvline(v, color=SLO_COLOR, linestyle="-", linewidth=1.1,
-                   alpha=0.9, zorder=4,
-                   label="SLO" if i == 0 else None)
+                   alpha=0.9, zorder=4, label="SLO" if i == 0 else None)
+    if annotate and pooled is not None and len(pooled):
+        txt = "\n".join(f"{100 * (pooled > v).mean():.1f}% > {v:g} ms"
+                        for v in values)
+        ax.text(0.98, 0.62, txt, transform=ax.transAxes, ha="right", va="top",
+                fontsize=7, color=SLO_COLOR, zorder=5)
 
 
-def _exit_split_title(label: str, desc: str) -> str:
-    """Two-line title — the runtime label plus λ does not fit on one line at
-    FIG_SINGLE width."""
+def _exit_split_title(label: str, desc: str, simple: bool) -> str:
+    """plot13 spells out the figure and its operating point; plot14 (`simple`)
+    carries the runtime name only — λ, the SLO and the class definitions all
+    belong in the caption, and four panels of repeated boilerplate is noise."""
+    if simple:
+        return label
     return f"{label} Latency by Exit Class\n({desc})"
 
 
+def _exit_class_label(cls: str, simple: bool) -> str:
+    return (EXIT_CLASS_LABELS_SHORT if simple else EXIT_CLASS_LABELS)[cls]
+
+
 def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
-                        lam=None, slo_ms=None, xmax=None):
+                        lam=None, slo_ms=None, xmax=None, simple=False):
     """Shared body of 13a/13c (and 14a/14c, which pass `lam` + `slo_ms`).
 
     `plots.exit_split_normalize`:
@@ -848,13 +874,17 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     if norm not in ("mixture", "each"):
         raise ValueError("plots.exit_split_normalize must be 'mixture' or "
                          f"'each', got {norm!r}")
-    show_pooled = bool(cfg.get_path("plots.exit_split_show_pooled", True))
+    # the pooled reference is plot13's argument ("the sum has no dip"); plot14
+    # is about the two classes against the deadline, so it drops the third curve
+    show_pooled = (not simple
+                   and bool(cfg.get_path("plots.exit_split_show_pooled", True)))
 
     lo = float(pooled.min())
     hi = _exit_split_hi(cfg, pooled, name, xmax)
     grid = np.linspace(lo, hi, int(cfg.get_path("plots.kde_grid_points", 400)))
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _slo_marks(ax, slo_ms, hi=hi, pooled=pooled, annotate=simple)
     if show_pooled and norm == "mixture":
         ax.plot(grid, _kde(pooled, grid, bw), color=EXIT_CLASS_COLORS["pooled"],
                 linestyle=EXIT_CLASS_STYLES["pooled"]["linestyle"],
@@ -865,19 +895,18 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
         w = len(l) / len(pooled) if norm == "mixture" else 1.0
         ax.plot(grid, w * _kde(l, grid, bw), color=EXIT_CLASS_COLORS[c],
                 linestyle=EXIT_CLASS_STYLES[c]["linestyle"],
-                label=EXIT_CLASS_LABELS[c], zorder=3)
-    _slo_marks(ax, slo_ms)
+                label=_exit_class_label(c, simple), zorder=3)
 
     ax.set_xlim(lo, hi)
     ax.set_xlabel("Latency (ms)")
     ax.set_ylabel("Density")
-    ax.set_title(_exit_split_title(label, desc))
+    ax.set_title(_exit_split_title(label, desc, simple))
     ax.legend(loc="upper right")
     return fig
 
 
 def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
-                         lam=None, slo_ms=None, xmax=None):
+                         lam=None, slo_ms=None, xmax=None, simple=False):
     """Shared body of 13b/13d (and 14b/14d) — the same split, no smoothing.
 
     `plots.exit_split_hist_stacked` (default true): the classes are disjoint
@@ -897,6 +926,7 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     edges = np.linspace(lo, hi, bins + 1)
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    _slo_marks(ax, slo_ms, hi=hi, pooled=pooled, annotate=simple)
     order = list(EXIT_CLASS_ORDER)
     by_class = dict(data)
     if stacked:
@@ -904,12 +934,13 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
             [by_class[c] for c in order], bins=edges, density=density,
             stacked=True, histtype="stepfilled",
             color=[EXIT_CLASS_COLORS[c] for c in order],
-            label=[EXIT_CLASS_LABELS[c] for c in order],
+            label=[_exit_class_label(c, simple) for c in order],
             edgecolor="white", linewidth=0.3)
         # per-class hatch (ax.hist takes no hatch list) — keeps the stack
-        # readable when the figure is printed in grayscale
+        # readable in grayscale. plot14 drops it: the green/amber pair already
+        # separates by luminance and the texture only adds clutter there.
         for c, cont in zip(order, containers):
-            h = EXIT_CLASS_STYLES[c]["hatch"]
+            h = None if simple else EXIT_CLASS_STYLES[c]["hatch"]
             if h:
                 for patch in np.atleast_1d(cont):
                     patch.set_hatch(h)
@@ -918,14 +949,13 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
             ax.hist(l, bins=edges, density=density, histtype="stepfilled",
                     alpha=0.35, color=EXIT_CLASS_COLORS[c],
                     edgecolor=EXIT_CLASS_COLORS[c], linewidth=1.1,
-                    hatch=EXIT_CLASS_STYLES[c]["hatch"],
-                    label=EXIT_CLASS_LABELS[c])
-    _slo_marks(ax, slo_ms)
+                    hatch=None if simple else EXIT_CLASS_STYLES[c]["hatch"],
+                    label=_exit_class_label(c, simple))
 
     ax.set_xlim(lo, hi)
     ax.set_xlabel("Latency (ms)")
     ax.set_ylabel("Density" if density else "Count")
-    ax.set_title(_exit_split_title(label, desc))
+    ax.set_title(_exit_split_title(label, desc, simple))
     ax.legend(loc="upper right")
     return fig
 
@@ -1005,7 +1035,8 @@ def _iso_exit_split_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     slo = _iso_exit_split_slo(cfg)
     xmax = cfg.get_path("plots.exit_split_xlim_ms", 100)
     build = _exit_split_kde_fig if kind == "kde" else _exit_split_hist_fig
-    fig = build(cfg, runtime, schedules, name, lam=lam, slo_ms=slo, xmax=xmax)
+    fig = build(cfg, runtime, schedules, name, lam=lam, slo_ms=slo, xmax=xmax,
+                simple=True)
     if slo is not None:
         # how much of each class misses the deadline — the number these figures
         # are drawn to support, so print it for the caption

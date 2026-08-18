@@ -88,6 +88,12 @@ arrivals:
 `arrivals.lambda` was revived from "unused". `naive_exit_*` renamed to `exit_split_*`.
 The per-class mean dotted lines (`exit_split_marks`) were removed.
 
+**The `proposed` runtime is labelled GATE in every figure** (`RUNTIME_LABELS`); the config key and
+the internal name are unchanged. The exit-class palette moved from purple/vermillion to
+**dark green (#1B7837) / amber (#E6A400)** — far apart in hue and luminance. 14a–14d additionally
+use a stripped style: runtime name only in the title, short class labels, no pooled curve, no
+hatching, the region past the SLO washed in red with the violated share printed on the plot.
+
 ### Measurements (08/10 15:30 pkl)
 
 | | capacity | ×0.90 | op times |

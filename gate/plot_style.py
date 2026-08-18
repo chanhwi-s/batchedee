@@ -21,7 +21,7 @@ RUNTIME_COLORS = {
     "naive":    "#E69F00",   # orange
     "proposed": "#009E73",   # green
 }
-RUNTIME_LABELS = {"plain": "Plain", "naive": "Naive", "proposed": "Proposed"}
+RUNTIME_LABELS = {"plain": "Plain", "naive": "Naive", "proposed": "GATE"}
 # linestyle + sparse marker per runtime so series stay readable in grayscale
 RUNTIME_STYLES = {
     "plain":    {"linestyle": "-",  "marker": "o"},
@@ -45,19 +45,25 @@ COMPONENT_LABELS = {
     "seg2_compute":    "Stage-2 compute",
 }
 
-# naive's per-sample exit class (plot 13a/13b). Red vs purple, plus a
-# linestyle/hatch difference so the pair survives grayscale printing (the two
-# hues have nearly the same luminance).
+# Per-sample exit class (plot 13/14). Dark green vs amber: far apart in hue AND
+# in luminance, so the pair separates on screen, in grayscale, and for the
+# common colour-vision deficiencies. Kept distinct from RUNTIME_COLORS — these
+# figures draw no runtime curves, but the reader still shouldn't have to
+# wonder.
 EXIT_CLASS_ORDER = ("exit", "nonexit")
 EXIT_CLASS_COLORS = {
-    "exit":    "#8856A7",   # purple      — completes at stage 1 (LPH)
-    "nonexit": "#D55E00",   # vermillion  — stage 1 + stage 2
-    "pooled":  "#666666",   # gray        — pooled naive reference
+    "exit":    "#1B7837",   # dark green — completes at stage 1 (LPH)
+    "nonexit": "#E6A400",   # amber      — stage 1 + stage 2
+    "pooled":  "#666666",   # gray       — pooled reference (plot13 only)
 }
 EXIT_CLASS_LABELS = {
     "exit":    "Exit @ stage 1",
     "nonexit": "Non-exit (stage 1+2)",
     "pooled":  "All samples (pooled)",
+}
+EXIT_CLASS_LABELS_SHORT = {                 # plot14: the panel has no room and
+    "exit":    "Exit",                      # the stage split is in the caption
+    "nonexit": "Non-exit",
 }
 EXIT_CLASS_STYLES = {                       # KDE linestyle / histogram hatch
     "exit":    {"linestyle": "-",  "hatch": None},
@@ -65,9 +71,11 @@ EXIT_CLASS_STYLES = {                       # KDE linestyle / histogram hatch
     "pooled":  {"linestyle": ":",  "hatch": None},
 }
 
-# SLO deadline marker (plot14). Deliberately NOT the non-exit vermillion above
-# — a pure red reads as an annotation rather than another data series.
+# SLO deadline marker (plot14): a red rule plus a light wash over the violating
+# region. Deliberately not one of the class hues — it must read as an
+# annotation, not another data series.
 SLO_COLOR = "#E41A1C"
+SLO_SHADE_ALPHA = 0.10
 
 IDLE_COLOR = "#E4E4E4"      # timeline idle segments
 STAGE2_TINT = 0.45          # blend-toward-white fraction for stage-2 marks
