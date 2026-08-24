@@ -13,7 +13,8 @@ import numpy as np
 from . import metrics
 from . import plot_style as ps
 from .arrivals import poisson_arrivals
-from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS, EXIT_CLASS_COLORS,
+from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS,
+                         COMPONENT_LEGEND_LABELS, EXIT_CLASS_COLORS,
                          EXIT_CLASS_LABELS, EXIT_CLASS_LABELS_SHORT,
                          EXIT_CLASS_ORDER, EXIT_CLASS_STYLES, FIG_DOUBLE,
                          FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS, RUNTIME_LABELS,
@@ -1171,7 +1172,7 @@ def _composition_panel(ax, lat, comps, edges, title):
 
 def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
                              name: str, out: str, lam=None, slo_ms=None,
-                             xmax=None):
+                             xmax=None, iso=False):
     """Shared body of 13e/13f (and 14e/14f, which pass lam/slo_ms/xmax): two
     panels (exit | non-exit), bars = bin counts, colors = that bin's mean
     latency composition.
@@ -1181,6 +1182,10 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
     Skipped in saturated mode, where latency is measured from the stage-1 op
     start and therefore no longer equals the sum of the arrival-referenced
     components.
+
+    `iso=True` (14e/14f) keeps the title to a bare runtime name — the shared
+    λ / SLO operating point is already fixed by config and not worth stating
+    on every panel.
     """
     (sched, label, common, arr, origin, desc, short, pooled,
      is_exit) = _exit_split_raw(cfg, schedules, runtime, lam)
@@ -1210,7 +1215,9 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
             for k in BREAKDOWN_KEYS if means[k] > 0))
     axes[0].set_ylabel("Count")
     axes[len(axes) // 2].set_xlabel("Latency (ms)")
-    fig.suptitle(f"{label} Latency Composition by Bin ({short})")
+    title = (f"{RUNTIME_LABELS[runtime]} Latency Composition by Bin" if iso
+             else f"{label} Latency Composition by Bin ({short})")
+    fig.suptitle(title)
     _component_legend(fig, slo_ms)
     return _save(fig, cfg, out)
 
@@ -1236,7 +1243,7 @@ def _iso_latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
     return _latency_composition_fig(
         cfg, runtime, schedules, name, out, lam=lam,
         slo_ms=_iso_exit_split_slo(cfg),
-        xmax=cfg.get_path("plots.exit_split_xlim_ms", 100))
+        xmax=cfg.get_path("plots.exit_split_xlim_ms", 100), iso=True)
 
 
 def plot_naive_latency_composition_iso(cfg: Config, schedules: dict):
@@ -1323,7 +1330,8 @@ def _stack_panel(ax, lams, curves, title):
 def _component_legend(fig, slo_ms=None):
     """Shared component legend. `slo_ms` (plot14e/14f) appends the deadline
     line so the red rule in the panels is explained."""
-    handles = [Patch(facecolor=COMPONENT_COLORS[k], label=COMPONENT_LABELS[k])
+    handles = [Patch(facecolor=COMPONENT_COLORS[k],
+                     label=COMPONENT_LEGEND_LABELS[k])
                for k in BREAKDOWN_KEYS]
     if slo_ms is not None:
         handles.append(Line2D([], [], color=SLO_COLOR, linewidth=1.1,

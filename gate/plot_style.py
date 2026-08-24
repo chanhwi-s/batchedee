@@ -44,6 +44,15 @@ COMPONENT_LABELS = {
     "seg2_queue_wait": "Stage-2 queue wait",
     "seg2_compute":    "Stage-2 compute",
 }
+# Subscript (mathtext) form of COMPONENT_LABELS, used only in figure legends
+# (kept separate from COMPONENT_LABELS so stdout summaries stay plain text).
+COMPONENT_LEGEND_LABELS = {
+    "formation_wait":  r"$t_{BF}$",
+    "gpu_wait":        r"$t_{GPU\ idle}$",
+    "stage1_compute":  r"$t_{S1}$",
+    "seg2_queue_wait": r"$t_{GQ}$",
+    "seg2_compute":    r"$t_{S2}$",
+}
 
 # Per-sample exit class (plot 13/14). Dark green vs amber: far apart in hue AND
 # in luminance, so the pair separates on screen, in grayscale, and for the
