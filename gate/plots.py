@@ -819,11 +819,12 @@ def _slo_values(slo_ms):
     return sorted(float(v) for v in seq)
 
 
-def _slo_marks(ax, slo_ms, pooled=None, annotate=False):
+def _slo_marks(ax, slo_ms, pooled=None, annotate=False, show_count=False):
     """Red deadline rule(s) plus, with `annotate`, the violated share in text
     (plot14). The violating MASS is filled separately — `_slo_fill_area` for a
     KDE, `_slo_color_bars` for a histogram — so that what is coloured is the
-    same quantity as the number printed here."""
+    same quantity as the number printed here. `show_count` (plot14e/14f) adds
+    the raw violating/total counts alongside the percentage."""
     values = _slo_values(slo_ms)
     if not values:
         return
@@ -831,8 +832,14 @@ def _slo_marks(ax, slo_ms, pooled=None, annotate=False):
         ax.axvline(v, color=SLO_COLOR, linestyle="-", linewidth=1.1,
                    alpha=0.9, zorder=4, label="SLO" if i == 0 else None)
     if annotate and pooled is not None and len(pooled):
-        txt = "\n".join(f"{100 * (pooled > v).mean():.1f}% > {v:g} ms"
-                        for v in values)
+        n = len(pooled)
+        if show_count:
+            txt = "\n".join(
+                f"{100 * (pooled > v).mean():.1f}% ({int((pooled > v).sum())}"
+                f"/{n}) > {v:g} ms" for v in values)
+        else:
+            txt = "\n".join(f"{100 * (pooled > v).mean():.1f}% > {v:g} ms"
+                            for v in values)
         ax.text(0.98, 0.62, txt, transform=ax.transAxes, ha="right", va="top",
                 fontsize=7, color=SLO_COLOR, zorder=5)
 
@@ -1205,9 +1212,11 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
     fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
     for ax, (cls, sel) in zip(axes, [("exit", is_exit), ("nonexit", ~is_exit)]):
         sub = {k: v[sel] for k, v in comps.items()}
-        _composition_panel(ax, pooled[sel], sub, edges,
-                           f"{EXIT_CLASS_LABELS[cls]} (n={int(sel.sum())})")
-        _slo_marks(ax, slo_ms)
+        panel_title = (EXIT_CLASS_LABELS[cls] if iso else
+                      f"{EXIT_CLASS_LABELS[cls]} (n={int(sel.sum())})")
+        _composition_panel(ax, pooled[sel], sub, edges, panel_title)
+        _slo_marks(ax, slo_ms, pooled=pooled[sel], annotate=iso,
+                  show_count=iso)
         means = {k: float(v.mean()) for k, v in sub.items()}
         tot = sum(means.values()) or 1.0
         print(f"[{name}]   {cls:8s} mean latency {tot:6.2f} ms = " + ", ".join(
