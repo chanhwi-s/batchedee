@@ -1345,7 +1345,13 @@ def plot_latency_composition_iso_combined(cfg: Config, schedules: dict):
     lo = min(float(p.min()) for p in pooled_by_runtime.values())
     hi = max(_exit_split_hi(cfg, p, name, xmax) for p in pooled_by_runtime.values())
 
-    fig, axes = plt.subplots(1, 4, figsize=FIG_QUAD, sharex=True, sharey=True)
+    # sharey only WITHIN each runtime's pair (matching 14e/14f, each its own
+    # figure with its own y-scale) — NOT across naive/GATE: their bin counts
+    # can differ enough in magnitude that a figure-wide shared y-axis flattens
+    # the smaller runtime's bars into near-invisibility.
+    fig, axes = plt.subplots(1, 4, figsize=FIG_QUAD, sharex=True, sharey=False)
+    axes[1].sharey(axes[0])
+    axes[3].sharey(axes[2])
     for runtime, sub_axes in (("naive", axes[:2]), ("proposed", axes[2:])):
         result = _composition_pair(
             cfg, runtime, schedules, name, sub_axes, lam=lam, slo_ms=slo_ms,
@@ -1355,6 +1361,7 @@ def plot_latency_composition_iso_combined(cfg: Config, schedules: dict):
             plt.close(fig)
             return None
     axes[0].set_ylabel("Count")
+    axes[2].set_ylabel("Count")
     axes[len(axes) // 2].set_xlabel("Latency (ms)")
     fig.suptitle(f"{RUNTIME_LABELS['naive']}/{RUNTIME_LABELS['proposed']} "
                 f"Latency Decomposition")
