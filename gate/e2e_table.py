@@ -32,10 +32,12 @@ load curve) plus the mean/p99 latency at that point and the capacity-based
 divergence λ. Computed on the common set over ALL configurations. plot2b
 draws each latency distribution at these knee λ values.
 
-Peak goodput (plot1d + peak_goodput.{json,csv}): for each runtime and each of
-the two fixed SLOs, goodput is scanned over the whole lambda_sweep grid and
-the maximum (with its argmax λ) is reported — each runtime at its OWN
-goodput-maximizing operating point, complementing the fixed-λ Table B view.
+Peak goodput (plot1d + peak_goodput.{json,csv}): for each runtime and each SLO
+in plots.peak_goodput_slo (a fixed range, independent of Table B's derived
+slo_avg/slo_p99 — falls back to slo_avg..slo_p99 step 10 if unset), goodput is
+scanned over the whole lambda_sweep grid and the maximum (with its argmax λ) is
+reported — each runtime at its OWN goodput-maximizing operating point,
+complementing the fixed-λ Table B view.
 """
 from __future__ import annotations
 
@@ -375,10 +377,19 @@ def generate(cfg: Config, scheds: dict) -> dict:
     _csv(os.path.join(d, "e2e_table_e.csv"), table_e)
 
     # ---- peak goodput: plain, naive, and EVERY proposed bs2, each at its own
-    #      goodput-maximizing λ, for every 10 ms SLO from SLO_avg up to
-    #      SLO_p99. Uses common_all (Table D's set) so all bs2 curves are
-    #      compared on the identical common set. ----
-    slo_values = list(range(slo_avg, slo_p99 + 1, 10)) or [slo_avg]
+    #      goodput-maximizing λ, for every SLO in plots.peak_goodput_slo (a
+    #      FIXED range; null falls back to the old SLO_avg..SLO_p99 derived
+    #      range, step 10). Uses common_all (Table D's set) so all bs2 curves
+    #      are compared on the identical common set. ----
+    pg_slo = cfg.get_path("plots.peak_goodput_slo")
+    if pg_slo:
+        slo_values = list(range(int(pg_slo["start_ms"]),
+                                int(pg_slo["stop_ms"]) + int(pg_slo["step_ms"]),
+                                int(pg_slo["step_ms"])))
+        slo_source = f"plots.peak_goodput_slo (fixed {pg_slo['start_ms']}-{pg_slo['stop_ms']}ms step {pg_slo['step_ms']}ms)"
+    else:
+        slo_values = list(range(slo_avg, slo_p99 + 1, 10)) or [slo_avg]
+        slo_source = "meta.slo (plain@λ1, rounded to 10 ms)"
     bs2_values = sorted(all_prop)
     default_label = f"proposed(bs2={B})"
     peak_entries = {"plain": scheds["plain"], "naive": scheds["naive"],
@@ -387,18 +398,20 @@ def generate(cfg: Config, scheds: dict) -> dict:
                for label, s in peak_entries.items()}
     peak_rows, _curves = _peak_goodput(cfg, peak_entries, common_all, peak_div,
                                        slo_values, seed, lams)
+    slo_ratio_ref = max(slo_values)
     r90 = {q["runtime"]: q["peak_goodput_sps"] for q in peak_rows
-           if q["slo_ms"] == slo_p99}
+           if q["slo_ms"] == slo_ratio_ref}
     cap_ratio = peak_div[default_label] / peak_div["naive"]
     peak_ratio = r90[default_label] / r90["naive"]
-    print(f"[peak] proposed(bs2={B})/naive peak ratio @SLO={slo_p99}ms = "
+    print(f"[peak] proposed(bs2={B})/naive peak ratio @SLO={slo_ratio_ref}ms = "
           f"{peak_ratio:.3f} (capacity ratio {cap_ratio:.3f})")
-    peak_out = {"meta": {"slo_source": "meta.slo (plain@λ1, rounded to 10 ms)",
+    peak_out = {"meta": {"slo_source": slo_source,
                          "slo_values_ms": slo_values, "seed": seed,
                          "lambda_grid": dict(cfg.arrivals["lambda_sweep"]),
                          "bs2_values": bs2_values, "default_bs2": B,
                          "common_set": "common_all (plain, naive, every bs2)",
-                         "peak_ratio_p99_proposed_over_naive": round(peak_ratio, 4),
+                         "peak_ratio_slo_ref_ms": slo_ratio_ref,
+                         "peak_ratio_proposed_over_naive": round(peak_ratio, 4),
                          "capacity_ratio_proposed_over_naive": round(cap_ratio, 4)},
                 "rows": peak_rows}
     ppath = os.path.join(d, "peak_goodput.json")

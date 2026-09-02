@@ -219,9 +219,19 @@ plots:
   #     cut would hide the evidence. Anything still beyond it is reported on
   #     stdout. null -> fall back to plot13's kde_clip_percentile behavior.
   exit_split_common_lambda: 1650
-  exit_split_slo_ms: 50
+  exit_split_slo_ms: 40
   exit_split_xlim_ms: 100
   exit_split_lambda: null
   exit_split_normalize: "mixture"
   exit_split_show_pooled: true
   exit_split_hist_stacked: true
+  # Plot 1d (peak_goodput.{json,csv} / plot1d_peak_goodput_bars): SLO sweep for
+  # the peak-goodput scan (plain/naive/every bs2, each at its OWN goodput-
+  # maximizing λ over the whole lambda_sweep grid). FIXED and explicit, unlike
+  # Table B's slo_avg/slo_p99 (which are DERIVED from plain's mean/p99 response
+  # time at λ1 and drift if the measured service times change run to run).
+  # null -> fall back to the old derived behavior (slo_avg..slo_p99, step 10).
+  peak_goodput_slo:
+    start_ms: 40
+    stop_ms: 100
+    step_ms: 10
