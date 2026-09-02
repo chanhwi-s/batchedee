@@ -94,6 +94,17 @@ paths:
 plots:
   dpi: 300                                       # PNG raster dpi (PDF is vector)
   format: "png"
+  # Display names for the three runtimes, used in EVERY figure's legend /
+  # title / axis ticks (gate/plot_style.py:RUNTIME_LABELS, applied once via
+  # `configure(cfg)` at the top of plot_all / e2e_table.generate). Does NOT
+  # cover the proposed seg2_batch sweep's own labels (e.g. "$bs_2=16$",
+  # gate/plot_style.py:b2_label) — those appear inside figures that already
+  # name GATE/proposed elsewhere (title or a plain legend entry), so the
+  # bs2 tag alone is enough there.
+  runtime_labels:
+    plain: "Plain"
+    naive: "Naive"
+    proposed: "GATE"
   # Timeline plot (plot7): clip the x-axis to the first N ms (null = full run).
   timeline_xlim_ms: null
   # Plot 1 pair figures: BOTH figures show plain + naive + the proposed b2

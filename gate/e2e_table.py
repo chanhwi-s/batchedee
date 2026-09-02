@@ -49,6 +49,7 @@ from datetime import datetime
 import numpy as np
 
 from . import metrics
+from . import plot_style as ps
 from .arrivals import poisson_arrivals
 from .runtimes import simulate
 from .util import Config, lambda_grid
@@ -122,7 +123,6 @@ def _peak_goodput(cfg: Config, entries: dict, common, div: dict,
 
 def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int],
                          bs2_values: list[int]):
-    from . import plot_style as ps
     from .plots import _save
     import matplotlib.pyplot as plt
 
@@ -164,6 +164,7 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int],
 
 
 def generate(cfg: Config, scheds: dict) -> dict:
+    ps.configure(cfg)
     B = int(cfg.batching.seg2_batch)
     entries = {"plain": scheds["plain"], "naive": scheds["naive"],
                "proposed": scheds["proposed"][B]}

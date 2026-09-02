@@ -22,6 +22,18 @@ RUNTIME_COLORS = {
     "proposed": "#009E73",   # green
 }
 RUNTIME_LABELS = {"plain": "Plain", "naive": "Naive", "proposed": "GATE"}
+
+
+def configure(cfg) -> None:
+    """Apply `plots.runtime_labels` overrides (if any) from config.yaml onto
+    the shared RUNTIME_LABELS dict, in place. Call once, before any figure
+    is drawn, from each entry point (plot_all / e2e_table.generate) — every
+    plot pulls its plain/naive/proposed legend text from this same dict, so
+    one config edit renames the runtime everywhere.
+    """
+    overrides = cfg.get_path("plots.runtime_labels", None)
+    if overrides:
+        RUNTIME_LABELS.update({k: str(v) for k, v in overrides.items()})
 # linestyle + sparse marker per runtime so series stay readable in grayscale
 RUNTIME_STYLES = {
     "plain":    {"linestyle": "-",  "marker": "o"},

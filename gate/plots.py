@@ -1633,6 +1633,7 @@ def plot_naive_seg2_sizes(cfg: Config, schedules: dict):
 
 
 def plot_all(cfg: Config, schedules: dict):
+    ps.configure(cfg)
     plot_slo_goodput(cfg, schedules)
     plot_latency_kde(cfg, schedules)
     plot_latency_kde_per_runtime(cfg, schedules)
