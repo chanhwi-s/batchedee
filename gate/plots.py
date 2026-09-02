@@ -1212,7 +1212,7 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
     fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
     for ax, (cls, sel) in zip(axes, [("exit", is_exit), ("nonexit", ~is_exit)]):
         sub = {k: v[sel] for k, v in comps.items()}
-        panel_title = (EXIT_CLASS_LABELS[cls] if iso else
+        panel_title = (EXIT_CLASS_LABELS_SHORT[cls] if iso else
                       f"{EXIT_CLASS_LABELS[cls]} (n={int(sel.sum())})")
         _composition_panel(ax, pooled[sel], sub, edges, panel_title)
         _slo_marks(ax, slo_ms, pooled=pooled[sel], annotate=iso,
@@ -1224,7 +1224,7 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
             for k in BREAKDOWN_KEYS if means[k] > 0))
     axes[0].set_ylabel("Count")
     axes[len(axes) // 2].set_xlabel("Latency (ms)")
-    title = (f"{RUNTIME_LABELS[runtime]} Latency Composition by Bin" if iso
+    title = (f"{RUNTIME_LABELS[runtime]} Latency Decomposition" if iso
              else f"{label} Latency Composition by Bin ({short})")
     fig.suptitle(title)
     _component_legend(fig, slo_ms)
@@ -1272,13 +1272,39 @@ def plot_proposed_latency_composition_iso(cfg: Config, schedules: dict):
 # --------------------------------------------------------------------------- #
 # Plot 4: load vs latency (+ divergence detection)
 # --------------------------------------------------------------------------- #
-def plot_load_latency(cfg: Config, schedules: dict):
-    """Plot 4: Load (lambda) vs response time (mean + p99) per runtime.
+def _curve_crossing(lams: np.ndarray, a: np.ndarray, b: np.ndarray):
+    """Where curve `a` overtakes curve `b` over the λ grid: the LAST sign
+    change of (a-b), linearly interpolated between the straddling grid
+    points. The last (not first) crossing is picked so incidental finite-N
+    noise near the low-λ end — where both curves sit close together — is not
+    mistaken for the real crossover near the runtimes' divergence points.
+    Returns (lam_x, y_x), or None if the curves never cross.
+    """
+    diff = a - b
+    idx = np.where(np.diff(np.sign(diff)) != 0)[0]
+    if len(idx) == 0:
+        return None
+    i = int(idx[-1])
+    d0, d1 = diff[i], diff[i + 1]
+    t = d0 / (d0 - d1)
+    lam_x = lams[i] + t * (lams[i + 1] - lams[i])
+    y_x = a[i] + t * (a[i + 1] - a[i])
+    return float(lam_x), float(y_x)
+
+
+def _load_latency_fig(cfg: Config, schedules: dict, name: str, out: str,
+                      mark_crossover: bool = False):
+    """Shared body of plot4/plot4b: Load (lambda) vs mean response time per
+    runtime.
 
     Also reports each runtime's divergence point — its service capacity
     (saturated throughput; arrival rates above it make the queue grow without
     bound) — plus the knee (latency minimum) of the sweep curve for reference,
     and returns the capacity-based divergence λ as a dict.
+
+    `mark_crossover=True` (plot4b) additionally marks the λ where naive's
+    mean latency overtakes GATE's (`_curve_crossing`) — otherwise identical
+    to plot4.
     """
     B = int(cfg.batching.seg2_batch)
     entries = [("plain", schedules["plain"]),
@@ -1294,19 +1320,46 @@ def plot_load_latency(cfg: Config, schedules: dict):
         divergence[r] = metrics.capacity_lambda(s, common)
         knee = metrics.knee_lambda(lams, means[r])
         knee_s = "-" if knee is None else f"{knee:g}"
-        print(f"[plot4] {r}: divergence λ (capacity) = {divergence[r]:.1f} req/s"
+        print(f"[{name}] {r}: divergence λ (capacity) = {divergence[r]:.1f} req/s"
               f" | knee (latency minimum) λ = {knee_s}")
 
     fig, ax = plt.subplots(figsize=FIG_SINGLE)
     for r, _ in entries:
         ax.plot(lams, means[r], color=RUNTIME_COLORS[r],
                 linestyle=RUNTIME_STYLES[r]["linestyle"], label=RUNTIME_LABELS[r])
+    if mark_crossover:
+        cross = _curve_crossing(lams, means["naive"], means["proposed"])
+        if cross is None:
+            print(f"[{name}] naive/GATE mean-latency curves never cross over "
+                  f"the swept λ range")
+        else:
+            lam_x, y_x = cross
+            ax.plot([lam_x], [y_x], marker="x", color="black", markersize=6,
+                    markeredgewidth=1.5, zorder=5, label="Naive/GATE crossover")
+            ax.annotate(f"λ={lam_x:.0f}", (lam_x, y_x),
+                       textcoords="offset points", xytext=(4, 6), fontsize=6)
+            print(f"[{name}] naive/GATE mean-latency crossover at "
+                  f"λ={lam_x:.1f} req/s, latency={y_x:.2f} ms")
     ax.set_xlabel(r"Arrival rate $\lambda$ (req/s)")
     ax.set_ylabel("Mean latency (ms)")
     ax.set_title("Load vs Latency")
     ax.legend(loc="upper left")
-    _save(fig, cfg, "plot4_load_latency")
+    _save(fig, cfg, out)
     return divergence
+
+
+def plot_load_latency(cfg: Config, schedules: dict):
+    """Plot 4: Load (lambda) vs response time (mean + p99) per runtime."""
+    return _load_latency_fig(cfg, schedules, "plot4", "plot4_load_latency")
+
+
+def plot_load_latency_crossover(cfg: Config, schedules: dict):
+    """Plot 4b: plot4, identical, plus the naive/GATE mean-latency crossover
+    point marked — the λ past which GATE's decoupled batching overtakes
+    naive's per-batch seg2 dispatch on mean response time."""
+    return _load_latency_fig(cfg, schedules, "plot4b",
+                             "plot4b_load_latency_crossover",
+                             mark_crossover=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -1603,6 +1656,7 @@ def plot_all(cfg: Config, schedules: dict):
     plot_naive_latency_composition_iso(cfg, schedules)
     plot_proposed_latency_composition_iso(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
+    plot_load_latency_crossover(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
     plot_stage_time_bars(cfg, schedules)

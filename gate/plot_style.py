@@ -48,7 +48,7 @@ COMPONENT_LABELS = {
 # (kept separate from COMPONENT_LABELS so stdout summaries stay plain text).
 COMPONENT_LEGEND_LABELS = {
     "formation_wait":  r"$t_{BF}$",
-    "gpu_wait":        r"$t_{GPU\ idle}$",
+    "gpu_wait":        r"$t_{idle}$",
     "stage1_compute":  r"$t_{S1}$",
     "seg2_queue_wait": r"$t_{GQ}$",
     "seg2_compute":    r"$t_{S2}$",
