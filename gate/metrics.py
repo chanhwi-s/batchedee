@@ -126,6 +126,18 @@ def capacity_lambda(sched: Schedule, common_ids: np.ndarray) -> float:
     return len(common_ids) / float(completion[common_ids].max())
 
 
+def capacity_step_lambda(sched: Schedule, common_ids: np.ndarray,
+                         lams: np.ndarray, step: float) -> float:
+    """`sched`'s capacity minus one λ-sweep step, snapped to the grid — the
+    "last stable load" reference point used by e2e_table.py's Table B for
+    each runtime's own λ2/λ3, and reused by gate/plots.py's plot14 ("auto"
+    mode) and e2e_table.py's Table F so the plot and its companion table
+    read off the identical operating point.
+    """
+    cap = capacity_lambda(sched, common_ids)
+    return float(lams[int(np.argmin(np.abs(lams - (cap - step))))])
+
+
 def knee_stats(sched: Schedule, lams: np.ndarray, common_ids: np.ndarray,
                seed: int):
     """Operating point at the mean-latency minimum of the λ sweep.

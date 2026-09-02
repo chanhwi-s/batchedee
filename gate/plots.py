@@ -17,10 +17,10 @@ from .plot_style import (COMPONENT_COLORS, COMPONENT_LABELS,
                          COMPONENT_LEGEND_LABELS, EXIT_CLASS_COLORS,
                          EXIT_CLASS_LABELS, EXIT_CLASS_LABELS_SHORT,
                          EXIT_CLASS_ORDER, EXIT_CLASS_STYLES, FIG_DOUBLE,
-                         FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS, RUNTIME_LABELS,
-                         RUNTIME_ORDER, RUNTIME_STYLES, SLO_COLOR,
-                         SLO_FILL_ALPHA, STAGE1_SWATCH, STAGE2_SWATCH,
-                         b2_label, lighten, proposed_shades)
+                         FIG_QUAD, FIG_SINGLE, IDLE_COLOR, RUNTIME_COLORS,
+                         RUNTIME_LABELS, RUNTIME_ORDER, RUNTIME_STYLES,
+                         SLO_COLOR, SLO_FILL_ALPHA, STAGE1_SWATCH,
+                         STAGE2_SWATCH, b2_label, lighten, proposed_shades)
 from .util import Config, lambda_grid, slo_grid_ms
 
 ps.apply_style()
@@ -1059,12 +1059,32 @@ def plot_proposed_exit_hist(cfg: Config, schedules: dict):
 # one scale to be comparable, and the tail past the SLO is the part being
 # argued about, so cutting it at p99 would hide the evidence.
 # --------------------------------------------------------------------------- #
-def _iso_exit_split_lambda(cfg: Config, name: str):
-    """The shared λ for plot14, or None when unset (caller skips)."""
+def _iso_exit_split_lambda(cfg: Config, schedules: dict, name: str):
+    """The shared λ for plot14 (14a-14g), or None when unset (caller skips).
+
+    `plots.exit_split_common_lambda`:
+      null   -> skip every plot14 figure
+      "auto" -> naive's capacity minus one λ-sweep step, snapped to the grid
+                — the SAME "last stable load" formula e2e_table.py's Table B
+                uses for naive's own reference λ (λ2), computed here against
+                the plain/naive/proposed@seg2_batch common set so plot14 and
+                its companion Table F (e2e_table.py) read the identical λ.
+      number -> fixed rate (manual override); 0 = saturated.
+    """
     raw = cfg.get_path("plots.exit_split_common_lambda", None)
     if raw is None:
         print(f"[{name}] plots.exit_split_common_lambda unset; skipped")
         return None
+    if isinstance(raw, str) and raw.strip().lower() == "auto":
+        B = int(cfg.batching.seg2_batch)
+        common = metrics.common_completed(
+            [schedules["plain"], schedules["naive"], schedules["proposed"][B]])
+        lams = lambda_grid(cfg)
+        step = float(cfg.arrivals["lambda_sweep"]["step"])
+        lam = metrics.capacity_step_lambda(schedules["naive"], common, lams, step)
+        print(f"[{name}] exit_split_common_lambda=auto -> λ={lam:g} req/s "
+              f"(naive capacity − 1 sweep step)")
+        return lam
     return float(raw)
 
 
@@ -1075,7 +1095,7 @@ def _iso_exit_split_slo(cfg: Config):
 
 def _iso_exit_split_fig(cfg: Config, runtime: str, schedules: dict, name: str,
                         out: str, kind: str):
-    lam = _iso_exit_split_lambda(cfg, name)
+    lam = _iso_exit_split_lambda(cfg, schedules, name)
     if lam is None:
         return None
     slo = _iso_exit_split_slo(cfg)
@@ -1177,22 +1197,29 @@ def _composition_panel(ax, lat, comps, edges, title):
     return counts
 
 
-def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
-                             name: str, out: str, lam=None, slo_ms=None,
-                             xmax=None, iso=False):
-    """Shared body of 13e/13f (and 14e/14f, which pass lam/slo_ms/xmax): two
-    panels (exit | non-exit), bars = bin counts, colors = that bin's mean
-    latency composition.
+def _composition_pair(cfg: Config, runtime: str, schedules: dict, name: str,
+                      axes, lam=None, slo_ms=None, xmax=None, iso=False,
+                      title_prefix: str = "", lo=None, hi=None):
+    """Draws the exit | non-exit composition panels for ONE runtime onto the
+    given pair of axes. Shared by `_latency_composition_fig` (13e/13f,
+    14e/14f — one runtime per figure) and the combined plot14g (both runtimes
+    in one 4-panel figure, where `title_prefix` disambiguates which pair is
+    which).
 
     `plots.composition_bins` (default 40) is deliberately coarser than
-    `hist_bins`: 80 thin bars cut into five colors is unreadable at print size.
-    Skipped in saturated mode, where latency is measured from the stage-1 op
-    start and therefore no longer equals the sum of the arrival-referenced
-    components.
+    `hist_bins`: 80 thin bars cut into five colors is unreadable at print
+    size. Skipped in saturated mode, where latency is measured from the
+    stage-1 op start and therefore no longer equals the sum of the
+    arrival-referenced components.
 
-    `iso=True` (14e/14f) keeps the title to a bare runtime name — the shared
-    λ / SLO operating point is already fixed by config and not worth stating
-    on every panel.
+    `lo`/`hi` override the bin-edge bounds — plot14g precomputes ONE shared
+    (lo, hi) across both runtimes before drawing either pair, since its 4
+    axes share x-limits (`sharex=True`): without a common bound, the
+    second-drawn pair would silently override the first's view window.
+    Defaults (None) fall back to this runtime's own pooled min / `_exit_split_hi`,
+    matching the single-runtime figures.
+
+    Returns (label, short) for the caller's title, or None if skipped.
     """
     (sched, label, common, arr, origin, desc, short, pooled,
      is_exit) = _exit_split_raw(cfg, schedules, runtime, lam)
@@ -1204,17 +1231,16 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
     bd = simulate_breakdown(sched, arr)
     comps = {k: bd[k][common] * 1000.0 for k in BREAKDOWN_KEYS}
     bins = int(cfg.get_path("plots.composition_bins", 40))
-    lo = float(pooled.min())
-    hi = _exit_split_hi(cfg, pooled, name, xmax)
+    lo = float(pooled.min()) if lo is None else float(lo)
+    hi = _exit_split_hi(cfg, pooled, name, xmax) if hi is None else float(hi)
     edges = np.linspace(lo, hi, bins + 1)
 
     print(f"[{name}] {label} at {desc}; {bins} bins over {lo:.1f}–{hi:.1f} ms")
-    fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
     for ax, (cls, sel) in zip(axes, [("exit", is_exit), ("nonexit", ~is_exit)]):
         sub = {k: v[sel] for k, v in comps.items()}
-        panel_title = (EXIT_CLASS_LABELS_SHORT[cls] if iso else
-                      f"{EXIT_CLASS_LABELS[cls]} (n={int(sel.sum())})")
-        _composition_panel(ax, pooled[sel], sub, edges, panel_title)
+        cls_title = (EXIT_CLASS_LABELS_SHORT[cls] if iso else
+                    f"{EXIT_CLASS_LABELS[cls]} (n={int(sel.sum())})")
+        _composition_panel(ax, pooled[sel], sub, edges, title_prefix + cls_title)
         _slo_marks(ax, slo_ms, pooled=pooled[sel], annotate=iso,
                   show_count=iso)
         means = {k: float(v.mean()) for k, v in sub.items()}
@@ -1222,6 +1248,26 @@ def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
         print(f"[{name}]   {cls:8s} mean latency {tot:6.2f} ms = " + ", ".join(
             f"{COMPONENT_LABELS[k]} {means[k]:.2f} ({100 * means[k] / tot:.0f}%)"
             for k in BREAKDOWN_KEYS if means[k] > 0))
+    return label, short
+
+
+def _latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
+                             name: str, out: str, lam=None, slo_ms=None,
+                             xmax=None, iso=False):
+    """Shared body of 13e/13f (and 14e/14f, which pass lam/slo_ms/xmax): two
+    panels (exit | non-exit) for ONE runtime, via `_composition_pair`.
+
+    `iso=True` (14e/14f) keeps the title to a bare runtime name — the shared
+    λ / SLO operating point is already fixed by config and not worth stating
+    on every panel.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
+    result = _composition_pair(cfg, runtime, schedules, name, axes, lam=lam,
+                               slo_ms=slo_ms, xmax=xmax, iso=iso)
+    if result is None:
+        plt.close(fig)
+        return None
+    label, short = result
     axes[0].set_ylabel("Count")
     axes[len(axes) // 2].set_xlabel("Latency (ms)")
     title = (f"{RUNTIME_LABELS[runtime]} Latency Decomposition" if iso
@@ -1246,7 +1292,7 @@ def plot_proposed_latency_composition(cfg: Config, schedules: dict):
 def _iso_latency_composition_fig(cfg: Config, runtime: str, schedules: dict,
                                  name: str, out: str):
     """13e/13f pinned to plot14's shared λ, fixed x-axis and SLO line."""
-    lam = _iso_exit_split_lambda(cfg, name)
+    lam = _iso_exit_split_lambda(cfg, schedules, name)
     if lam is None:
         return None
     return _latency_composition_fig(
@@ -1267,6 +1313,53 @@ def plot_proposed_latency_composition_iso(cfg: Config, schedules: dict):
     return _iso_latency_composition_fig(
         cfg, "proposed", schedules, "plot14f",
         "plot14f_proposed_latency_composition_iso")
+
+
+def plot_latency_composition_iso_combined(cfg: Config, schedules: dict):
+    """Plot 14g: 14e (naive) and 14f (GATE) side by side as ONE 4-panel
+    figure — naive-exit | naive-nonexit | GATE-exit | GATE-nonexit — for a
+    single glance at all four distributions at plot14's shared λ/SLO
+    operating point. Panel titles carry the runtime tag (14e/14f standalone
+    keep the bare "Exit"/"Non-exit" titles since the figure title alone names
+    the runtime there)."""
+    name = "plot14g"
+    lam = _iso_exit_split_lambda(cfg, schedules, name)
+    if lam is None:
+        return None
+    slo_ms = _iso_exit_split_slo(cfg)
+    xmax = cfg.get_path("plots.exit_split_xlim_ms", 100)
+
+    # Precompute both runtimes' pooled latency once so all 4 panels share
+    # identical bin edges — the figure's sharex=True ties every panel's view
+    # limits together, so without a common (lo, hi) the second-drawn pair
+    # would silently override the first's window.
+    pooled_by_runtime = {}
+    for runtime in ("naive", "proposed"):
+        raw = _exit_split_raw(cfg, schedules, runtime, lam)
+        if raw[4] != "arrival":
+            print(f"[{name}] {raw[1]}: λ is saturated; the additive "
+                  f"decomposition is not defined against a stage-1-start "
+                  f"clock — skipped")
+            return None
+        pooled_by_runtime[runtime] = raw[7]
+    lo = min(float(p.min()) for p in pooled_by_runtime.values())
+    hi = max(_exit_split_hi(cfg, p, name, xmax) for p in pooled_by_runtime.values())
+
+    fig, axes = plt.subplots(1, 4, figsize=FIG_QUAD, sharex=True, sharey=True)
+    for runtime, sub_axes in (("naive", axes[:2]), ("proposed", axes[2:])):
+        result = _composition_pair(
+            cfg, runtime, schedules, name, sub_axes, lam=lam, slo_ms=slo_ms,
+            xmax=xmax, iso=True, title_prefix=f"{RUNTIME_LABELS[runtime]} – ",
+            lo=lo, hi=hi)
+        if result is None:
+            plt.close(fig)
+            return None
+    axes[0].set_ylabel("Count")
+    axes[len(axes) // 2].set_xlabel("Latency (ms)")
+    fig.suptitle(f"{RUNTIME_LABELS['naive']}/{RUNTIME_LABELS['proposed']} "
+                f"Latency Decomposition")
+    _component_legend(fig, slo_ms)
+    return _save(fig, cfg, "plot14g_latency_composition_combined")
 
 
 # --------------------------------------------------------------------------- #
@@ -1656,6 +1749,7 @@ def plot_all(cfg: Config, schedules: dict):
     plot_proposed_exit_hist_iso(cfg, schedules)
     plot_naive_latency_composition_iso(cfg, schedules)
     plot_proposed_latency_composition_iso(cfg, schedules)
+    plot_latency_composition_iso_combined(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_load_latency_crossover(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)

@@ -109,6 +109,7 @@ STAGE2_SWATCH = "#BBBBBB"
 # final print sizes (inches) — figures must not be rescaled in LaTeX
 FIG_SINGLE = (3.5, 2.5)     # single column: plots 1–4, 8
 FIG_DOUBLE = (7.2, 2.8)     # double column: plots 5–7
+FIG_QUAD = (14.4, 2.8)      # four-panel comparison: plot14g
 
 
 # --------------------------------------------------------------------------- #

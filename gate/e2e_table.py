@@ -163,6 +163,32 @@ def _peak_goodput_figure(cfg: Config, rows: list[dict], slo_values: list[int],
     return _save(fig, cfg, "plot1d_peak_goodput_bars")
 
 
+def _table_f(cfg: Config, scheds: dict, seed: int, lams: np.ndarray,
+            step: float) -> tuple[list[dict], float]:
+    """Table F: naive/GATE mean + p99 latency split by exit class (exit vs
+    non-exit), replayed at plot14's shared λ — naive's capacity minus one
+    λ-sweep step (see gate/plots.py:_iso_exit_split_lambda, "auto" mode),
+    computed on the SAME plain/naive/proposed@seg2_batch common set — so
+    these numbers are exactly what plot14e/14f/14g draw.
+    """
+    from .plots import _exit_mask
+    B = int(cfg.batching.seg2_batch)
+    plain, naive, proposed = scheds["plain"], scheds["naive"], scheds["proposed"][B]
+    common = metrics.common_completed([plain, naive, proposed])
+    lam = metrics.capacity_step_lambda(naive, common, lams, step)
+    arr = poisson_arrivals(naive.n_requests, lam, seed)
+    rows = []
+    for label, s in (("naive", naive), (f"proposed(bs2={B})", proposed)):
+        lat = metrics.latency_ms(s, arr, common, "arrival")
+        is_exit = _exit_mask(s)[common]
+        for cls, sel in (("exit", is_exit), ("nonexit", ~is_exit)):
+            sub = lat[sel]
+            rows.append({"runtime": label, "exit_class": cls, "n": int(sel.sum()),
+                        "mean_ms": round(float(sub.mean()), 2),
+                        "p99_ms": round(float(np.percentile(sub, 99)), 2)})
+    return rows, lam
+
+
 def generate(cfg: Config, scheds: dict) -> dict:
     ps.configure(cfg)
     B = int(cfg.batching.seg2_batch)
@@ -306,6 +332,10 @@ def generate(cfg: Config, scheds: dict) -> dict:
                         "throughput_sps": round(thr_cap, 1),
                         "reference_lambda": ref_lambda})
 
+    # ---- Table F: naive/GATE mean+p99 latency by exit class (exit/non-exit)
+    #      at plot14's shared λ — the exact numbers plot14e/14f/14g draw. ----
+    table_f, lambda_f = _table_f(cfg, scheds, seed, lams, step)
+
     # ---- sanity checks ----
     lam1 = chosen[0]
     g_plain = next(row for row in table_b
@@ -354,10 +384,12 @@ def generate(cfg: Config, scheds: dict) -> dict:
                 "slo_avg_ms": slo_avg, "slo_p99_ms": slo_p99},
         "user_lambda_table": {"source": "plots.slo_goodput_lambda",
                               "configured": user_map, "values_used": user_lams},
+        "table_f_lambda": lambda_f,   # plot14's shared λ (naive capacity − step)
         "sanity_checks": checks,
     }
     result = {"meta": meta, "table_a": table_a, "table_b": table_b,
-              "table_c": table_c, "table_d": table_d, "table_e": table_e}
+              "table_c": table_c, "table_d": table_d, "table_e": table_e,
+              "table_f": table_f}
 
     d = cfg.paths["results_dir"]
     os.makedirs(d, exist_ok=True)
@@ -376,6 +408,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
         _csv(os.path.join(d, "e2e_table_c.csv"), table_c)
     _csv(os.path.join(d, "e2e_table_d.csv"), table_d)
     _csv(os.path.join(d, "e2e_table_e.csv"), table_e)
+    _csv(os.path.join(d, "e2e_table_f.csv"), table_f)
 
     # ---- peak goodput: plain, naive, and EVERY proposed bs2, each at its own
     #      goodput-maximizing λ, for every SLO in plots.peak_goodput_slo (a
@@ -428,7 +461,7 @@ def generate(cfg: Config, scheds: dict) -> dict:
         json.dump(result, f, indent=2, default=float)
     written.insert(0, jpath)
 
-    _print_tables(table_a, table_b, meta, table_c, table_d, table_e)
+    _print_tables(table_a, table_b, meta, table_c, table_d, table_e, table_f)
     for p in written:
         print(f"[e2e] wrote {p}")
     return result
@@ -445,7 +478,8 @@ def _print_rows(rows):
               f"{row['goodput_slo_p99']:>10.1f} {str(row['diverged']):>9}")
 
 
-def _print_tables(table_a, table_b, meta, table_c=None, table_d=None, table_e=None):
+def _print_tables(table_a, table_b, meta, table_c=None, table_d=None,
+                  table_e=None, table_f=None):
     print("\n[e2e] Table A — λ-independent metrics")
     hdr = f"{'runtime':<10} {'acc(%)':>8} {'sat.thr(s/s)':>13} {'divλ(capacity)':>15}"
     print(hdr)
@@ -486,4 +520,15 @@ def _print_tables(table_a, table_b, meta, table_c=None, table_d=None, table_e=No
             print(f"{row['config']:<18} {row['capacity_lambda']:>10.1f} "
                   f"{row['mean_ms']:>9.2f} {row['p99_ms']:>9.2f} "
                   f"{row['throughput_sps']:>11.1f} {row['reference_lambda']:>12g}")
+
+    if table_f:
+        lam_f = meta.get("table_f_lambda")
+        print(f"\n[e2e] Table F — naive/GATE latency by exit class "
+              f"(λ={lam_f:g}, plot14's shared operating point)")
+        hdr = f"{'runtime':<18} {'class':<8} {'n':>7} {'mean(ms)':>9} {'p99(ms)':>9}"
+        print(hdr)
+        print("-" * len(hdr))
+        for row in table_f:
+            print(f"{row['runtime']:<18} {row['exit_class']:<8} {row['n']:>7} "
+                  f"{row['mean_ms']:>9.2f} {row['p99_ms']:>9.2f}")
     print()

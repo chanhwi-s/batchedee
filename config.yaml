@@ -213,14 +213,19 @@ plots:
   #   composition_bins: coarser than hist_bins on purpose — 80 thin bars cut
   #                     into five colors is unreadable at print size.
   composition_bins: 40
-  # Plot 14a-14d — 13a-13d again, but pinned to ONE shared λ and annotated with
-  # the SLO deadline, so naive (14a/14b) and proposed (14c/14d) are directly
-  # comparable: same offered load, only the batching structure differs. 13's
-  # per-runtime capacity×margin λ cannot support that comparison.
-  #   exit_split_common_lambda: the shared rate in req/s. NEVER auto-derived —
-  #     pick one below the SMALLEST capacity among the compared runtimes (see
-  #     Table A / plot4) and state it in the caption. 0 = saturated.
-  #     null -> all four figures are skipped.
+  # Plot 14a-14g — 13a-13d again, but pinned to ONE shared λ and annotated
+  # with the SLO deadline, so naive (14a/14b/14e) and proposed (14c/14d/14f)
+  # are directly comparable: same offered load, only the batching structure
+  # differs. 13's per-runtime capacity×margin λ cannot support that
+  # comparison. 14g is 14e+14f as one 4-panel figure.
+  #   exit_split_common_lambda: the shared rate in req/s.
+  #     "auto" (default) -> naive's capacity minus one λ-sweep step, snapped
+  #       to the grid — the SAME "last stable load" formula e2e_table.py's
+  #       Table B uses for naive's own reference λ (λ2), computed on the
+  #       plain/naive/proposed@seg2_batch common set. Table F reports the
+  #       exact mean/p99 latency this λ produces, split by exit class.
+  #     number -> fixed manual override; 0 = saturated.
+  #     null -> all seven figures (14a-14g) are skipped.
   #   exit_split_slo_ms: a number, or a list of numbers, drawn as red vertical
   #     deadline line(s). null = no line. The per-class violation rates at each
   #     SLO are printed to stdout — that is the number the figure argues about.
@@ -229,7 +234,7 @@ plots:
   #     the tail past the SLO is exactly what is being argued about, so a p99
   #     cut would hide the evidence. Anything still beyond it is reported on
   #     stdout. null -> fall back to plot13's kde_clip_percentile behavior.
-  exit_split_common_lambda: 1650
+  exit_split_common_lambda: "auto"
   exit_split_slo_ms: 40
   exit_split_xlim_ms: 100
   exit_split_lambda: null
