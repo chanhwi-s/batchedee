@@ -1,0 +1,5 @@
+runtime,exit_class,n,mean_ms,p99_ms
+naive,exit,9067,36.15,68.41
+naive,nonexit,7312,38.73,70.57
+proposed(bs2=16),exit,9067,17.81,32.51
+proposed(bs2=16),nonexit,7312,31.81,52.31
