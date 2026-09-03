@@ -1462,6 +1462,74 @@ def plot_load_latency_crossover(cfg: Config, schedules: dict):
                              mark_crossover=True)
 
 
+def _load_latency_sweep_fig(cfg: Config, schedules: dict, name: str, out: str,
+                            include_naive: bool):
+    """Shared body of plot4c/plot4d: Load (lambda) vs mean response time,
+    one curve per GATE seg2_batch (the full `batching.seg2_batch_sweep`),
+    optionally with naive drawn alongside as a reference curve.
+
+    Same measurement path as `_load_latency_fig` (mean latency over the λ
+    sweep), but fanned out across every proposed[B] instead of the single
+    configured seg2_batch — and, per the fairness convention, each figure's
+    common completed-set is the intersection of only the runtimes IT draws
+    (naive + all Bs for plot4d; all Bs alone for plot4c), same as plot4/4b's
+    own scoped common set.
+    """
+    prop = schedules["proposed"]  # {B: Schedule}
+    Bs = sorted(prop.keys())
+    entries = [("naive", schedules["naive"])] if include_naive else []
+    entries += [(b2_label(B), prop[B]) for B in Bs]
+    common = metrics.common_completed([s for _, s in entries])
+    lams = lambda_grid(cfg)
+    base_seed = int(cfg.arrivals.seed)
+
+    fig, ax = plt.subplots(figsize=FIG_SINGLE)
+    if include_naive:
+        means, _ = metrics.load_latency_curves(schedules["naive"], lams, common, base_seed)
+        divergence = metrics.capacity_lambda(schedules["naive"], common)
+        knee = metrics.knee_lambda(lams, means)
+        knee_s = "-" if knee is None else f"{knee:g}"
+        print(f"[{name}] naive: divergence λ (capacity) = {divergence:.1f} req/s"
+              f" | knee (latency minimum) λ = {knee_s}")
+        ax.plot(lams, means, color=RUNTIME_COLORS["naive"],
+                linestyle=RUNTIME_STYLES["naive"]["linestyle"],
+                label=RUNTIME_LABELS["naive"])
+
+    shades = proposed_shades(len(Bs))
+    for c, B in zip(shades, Bs):
+        means, _ = metrics.load_latency_curves(prop[B], lams, common, base_seed)
+        divergence = metrics.capacity_lambda(prop[B], common)
+        knee = metrics.knee_lambda(lams, means)
+        knee_s = "-" if knee is None else f"{knee:g}"
+        print(f"[{name}] {b2_label(B)}: divergence λ (capacity) = {divergence:.1f} req/s"
+              f" | knee (latency minimum) λ = {knee_s}")
+        ax.plot(lams, means, color=c, linestyle="-", label=b2_label(B))
+
+    ax.set_xlabel(r"Arrival rate $\lambda$ (req/s)")
+    ax.set_ylabel("Mean latency (ms)")
+    ax.set_title("Load vs Latency (GATE vs Naive)" if include_naive
+                 else "Load vs Latency (GATE seg2_batch sweep)")
+    ax.legend(loc="upper left", ncol=2 if len(entries) > 3 else 1)
+    return _save(fig, cfg, out)
+
+
+def plot_load_latency_gate_sweep(cfg: Config, schedules: dict):
+    """Plot 4c: Load vs mean latency, GATE only — one curve per seg2_batch
+    (`batching.seg2_batch_sweep`), no naive/plain reference curves."""
+    return _load_latency_sweep_fig(cfg, schedules, "plot4c",
+                                   "plot4c_load_latency_gate_sweep",
+                                   include_naive=False)
+
+
+def plot_load_latency_gate_sweep_vs_naive(cfg: Config, schedules: dict):
+    """Plot 4d: plot4c's GATE seg2_batch sweep plus naive as a reference
+    curve, for a single glance at how each seg2_batch compares to naive's
+    load-vs-latency behavior."""
+    return _load_latency_sweep_fig(cfg, schedules, "plot4d",
+                                   "plot4d_load_latency_gate_sweep_vs_naive",
+                                   include_naive=True)
+
+
 # --------------------------------------------------------------------------- #
 # Plots 5 & 6: latency decomposition
 # --------------------------------------------------------------------------- #
@@ -1759,6 +1827,8 @@ def plot_all(cfg: Config, schedules: dict):
     plot_latency_composition_iso_combined(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_load_latency_crossover(cfg, schedules)
+    plot_load_latency_gate_sweep(cfg, schedules)
+    plot_load_latency_gate_sweep_vs_naive(cfg, schedules)
     plot_latency_breakdown(cfg, schedules)
     plot_timeline(cfg, schedules)
     plot_stage_time_bars(cfg, schedules)
