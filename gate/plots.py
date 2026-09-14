@@ -944,23 +944,34 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
     return fig
 
 
-def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
-                         lam=None, slo_ms=None, xmax=None, simple=False):
-    """Shared body of 13b/13d (and 14b/14d): one subplot per exit class
-    (exit | non-exit), same layout as 13e/13f (and 14e/14f) rather than
-    overlaying/stacking both classes on one axis. Bins/x-range follow plot12
-    (plots.hist_bins, the KDE x-clip); samples past the clip fall outside the
-    edges and are dropped.
+def _hist_pair(cfg: Config, runtime: str, schedules: dict, name: str, axes,
+              lam=None, slo_ms=None, xmax=None, simple=False,
+              title_prefix: str = "", lo=None, hi=None):
+    """Draws the exit | non-exit histogram panels for ONE runtime onto the
+    given pair of axes. Shared by `_exit_split_hist_fig` (13b/13d, 14b/14d —
+    one runtime per figure) and the combined plot14h (both runtimes in one
+    4-panel figure, where `title_prefix` disambiguates which pair is which).
+
+    Each panel is titled with its exit class (short form when `simple`,
+    matching `_composition_pair`'s panel titles in 13e/13f/14e/14f) so the
+    mode is readable without a legend.
+
+    `lo`/`hi` override the bin-edge bounds — plot14h precomputes ONE shared
+    (lo, hi) across both runtimes before drawing either pair, since its 4
+    axes share x-limits (`sharex=True`): without a common bound, the
+    second-drawn pair would silently override the first's view window.
+    Defaults (None) fall back to this runtime's own pooled min /
+    `_exit_split_hi`, matching the single-runtime figures.
+
+    Returns (label, desc) for the caller's title.
     """
     data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name, lam)
     bins = int(cfg.get_path("plots.hist_bins", 80))
     density = bool(cfg.get_path("plots.hist_density", False))
-
-    lo = float(pooled.min())
-    hi = _exit_split_hi(cfg, pooled, name, xmax)
+    lo = float(pooled.min()) if lo is None else float(lo)
+    hi = _exit_split_hi(cfg, pooled, name, xmax) if hi is None else float(hi)
     edges = np.linspace(lo, hi, bins + 1)
 
-    fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
     by_class = dict(data)
     # "bar" gives one patch per bin, which _slo_color_bars needs; "stepfilled"
     # collapses the dataset into a single polygon.
@@ -970,16 +981,33 @@ def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
         _slo_marks(ax, slo_ms, pooled=l, annotate=simple)
         _, _, cont = ax.hist(
             l, bins=edges, density=density, histtype=htype,
-            color=EXIT_CLASS_COLORS[c], label=_exit_class_label(c, simple),
-            edgecolor="white", linewidth=0.3)
+            color=EXIT_CLASS_COLORS[c], edgecolor="white", linewidth=0.3)
         h = None if simple else EXIT_CLASS_STYLES[c]["hatch"]
         if h:
             for patch in cont:
                 patch.set_hatch(h)
         _slo_color_bars([cont], edges, slo_ms)
         ax.set_xlim(lo, hi)
-        ax.legend(loc="upper right")
+        cls_title = (EXIT_CLASS_LABELS_SHORT[c] if simple else
+                    f"{EXIT_CLASS_LABELS[c]} (n={len(l)})")
+        ax.set_title(title_prefix + cls_title)
+        if _slo_values(slo_ms):
+            ax.legend(loc="upper right")
+    return label, desc
 
+
+def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
+                         lam=None, slo_ms=None, xmax=None, simple=False):
+    """Shared body of 13b/13d (and 14b/14d): one subplot per exit class
+    (exit | non-exit), same layout as 13e/13f (and 14e/14f) rather than
+    overlaying/stacking both classes on one axis. Bins/x-range follow plot12
+    (plots.hist_bins, the KDE x-clip); samples past the clip fall outside the
+    edges and are dropped.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
+    label, desc = _hist_pair(cfg, runtime, schedules, name, axes, lam=lam,
+                             slo_ms=slo_ms, xmax=xmax, simple=simple)
+    density = bool(cfg.get_path("plots.hist_density", False))
     axes[0].set_ylabel("Density" if density else "Count")
     axes[len(axes) // 2].set_xlabel("Latency (ms)")
     fig.suptitle(_exit_split_title(label, desc, simple))
@@ -1118,6 +1146,48 @@ def plot_proposed_exit_hist_iso(cfg: Config, schedules: dict):
     """Plot 14d: proposed@seg2_batch latency histogram by exit class, shared λ."""
     return _iso_exit_split_fig(cfg, "proposed", schedules, "plot14d",
                                "plot14d_proposed_exit_hist_iso", "hist")
+
+
+def plot_exit_hist_iso_combined(cfg: Config, schedules: dict):
+    """Plot 14h: 14b (naive) and 14d (GATE) side by side as ONE 4-panel
+    histogram figure — naive-exit | naive-nonexit | GATE-exit | GATE-nonexit
+    — with ALL FOUR panels sharing ONE y-scale (unlike 14g, which shares y
+    only within each runtime's own pair). Whichever panel has the tallest
+    peak — currently GATE's exit class — sets the axis for every panel, so
+    naive's flatter, longer-tailed histograms read directly against that
+    same scale instead of being auto-scaled to fill their own panel."""
+    name = "plot14h"
+    lam = _iso_exit_split_lambda(cfg, schedules, name)
+    if lam is None:
+        return None
+    slo_ms = _iso_exit_split_slo(cfg)
+    xmax = cfg.get_path("plots.exit_split_xlim_ms", 100)
+
+    # Precompute both runtimes' pooled latency once so all 4 panels share
+    # identical bin edges — sharex=True ties every panel's view limits
+    # together, so without a common (lo, hi) the second-drawn pair would
+    # silently override the first's window.
+    pooled_by_runtime = {}
+    for runtime in ("naive", "proposed"):
+        raw = _exit_split_raw(cfg, schedules, runtime, lam)
+        pooled_by_runtime[runtime] = raw[7]
+    lo = min(float(p.min()) for p in pooled_by_runtime.values())
+    hi = max(_exit_split_hi(cfg, p, name, xmax) for p in pooled_by_runtime.values())
+
+    fig, axes = plt.subplots(1, 4, figsize=FIG_QUAD, sharex=True, sharey=True)
+    for runtime, sub_axes in (("naive", axes[:2]), ("proposed", axes[2:])):
+        _hist_pair(cfg, runtime, schedules, name, sub_axes, lam=lam,
+                  slo_ms=slo_ms, xmax=xmax, simple=True,
+                  title_prefix=f"{RUNTIME_LABELS[runtime]} – ", lo=lo, hi=hi)
+    density = bool(cfg.get_path("plots.hist_density", False))
+    axes[0].set_ylabel("Density" if density else "Count")
+    axes[len(axes) // 2].set_xlabel("Latency (ms)")
+    fig.suptitle(f"{RUNTIME_LABELS['naive']}/{RUNTIME_LABELS['proposed']} "
+                f"Latency by Exit Class (Shared Scale)")
+    if _slo_values(slo_ms):
+        fig.legend(handles=[Line2D([], [], color=SLO_COLOR, linewidth=1.1,
+                                  label="SLO")], loc="outside lower center")
+    return _save(fig, cfg, "plot14h_exit_hist_combined")
 
 
 # --------------------------------------------------------------------------- #
@@ -1347,6 +1417,50 @@ def plot_latency_composition_iso_combined(cfg: Config, schedules: dict):
                 f"Latency Decomposition")
     _component_legend(fig, slo_ms)
     return _save(fig, cfg, "plot14g_latency_composition_combined")
+
+
+def plot_latency_composition_iso_combined_shared_scale(cfg: Config, schedules: dict):
+    """Plot 14i: 14e (naive) and 14f (GATE) side by side as ONE 4-panel
+    figure, exactly like 14g, except ALL FOUR panels share ONE y-scale
+    (unlike 14g's deliberate per-runtime-pair sharey). Whichever panel has
+    the tallest peak — currently GATE's exit class — sets the axis for every
+    panel, which is the point: naive's flatter, longer-tailed bars read
+    directly against that same scale instead of each pair being separately
+    auto-scaled to fill its own panel."""
+    name = "plot14i"
+    lam = _iso_exit_split_lambda(cfg, schedules, name)
+    if lam is None:
+        return None
+    slo_ms = _iso_exit_split_slo(cfg)
+    xmax = cfg.get_path("plots.exit_split_xlim_ms", 100)
+
+    pooled_by_runtime = {}
+    for runtime in ("naive", "proposed"):
+        raw = _exit_split_raw(cfg, schedules, runtime, lam)
+        if raw[4] != "arrival":
+            print(f"[{name}] {raw[1]}: λ is saturated; the additive "
+                  f"decomposition is not defined against a stage-1-start "
+                  f"clock — skipped")
+            return None
+        pooled_by_runtime[runtime] = raw[7]
+    lo = min(float(p.min()) for p in pooled_by_runtime.values())
+    hi = max(_exit_split_hi(cfg, p, name, xmax) for p in pooled_by_runtime.values())
+
+    fig, axes = plt.subplots(1, 4, figsize=FIG_QUAD, sharex=True, sharey=True)
+    for runtime, sub_axes in (("naive", axes[:2]), ("proposed", axes[2:])):
+        result = _composition_pair(
+            cfg, runtime, schedules, name, sub_axes, lam=lam, slo_ms=slo_ms,
+            xmax=xmax, iso=True, title_prefix=f"{RUNTIME_LABELS[runtime]} – ",
+            lo=lo, hi=hi)
+        if result is None:
+            plt.close(fig)
+            return None
+    axes[0].set_ylabel("Count")
+    axes[len(axes) // 2].set_xlabel("Latency (ms)")
+    fig.suptitle(f"{RUNTIME_LABELS['naive']}/{RUNTIME_LABELS['proposed']} "
+                f"Latency Decomposition (Shared Scale)")
+    _component_legend(fig, slo_ms)
+    return _save(fig, cfg, "plot14i_latency_composition_combined_shared_scale")
 
 
 # --------------------------------------------------------------------------- #
@@ -1802,9 +1916,11 @@ def plot_all(cfg: Config, schedules: dict):
     plot_naive_exit_hist_iso(cfg, schedules)
     plot_proposed_exit_kde_iso(cfg, schedules)
     plot_proposed_exit_hist_iso(cfg, schedules)
+    plot_exit_hist_iso_combined(cfg, schedules)
     plot_naive_latency_composition_iso(cfg, schedules)
     plot_proposed_latency_composition_iso(cfg, schedules)
     plot_latency_composition_iso_combined(cfg, schedules)
+    plot_latency_composition_iso_combined_shared_scale(cfg, schedules)
     divergence = plot_load_latency(cfg, schedules)
     plot_load_latency_crossover(cfg, schedules)
     plot_load_latency_gate_sweep(cfg, schedules)

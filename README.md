@@ -165,9 +165,9 @@ Outputs:
      non-exit samples also wait for the seg2 queue to fill (gap ≈ 14.5 ms,
      d ≈ 2.3 → the split is real and visible). The `"mixture"` normalization
      scales each class KDE by its sample share so the two sum to the pooled
-     density (gray); the histograms draw exit | non-exit as two subplots
-     (same layout as 13e/13f below) rather than one overlaid/stacked axis.
-     λ defaults to each runtime's own
+     density (gray); the histograms draw exit | non-exit as two titled
+     subplots (same layout as 13e/13f below) rather than one overlaid/stacked
+     axis. λ defaults to each runtime's own
      capacity×margin (same point as plot2/3/12b); override per runtime with
      `plots.exit_split_lambda`. Mean gap, pooled sd and Cohen's d are printed
      to stdout — quote them in the caption. Setting `exit_split_lambda: 0`
@@ -214,7 +214,16 @@ Outputs:
      `plot14f_proposed_latency_composition_iso` are 13e/13f under the same
      treatment — per-bin composition at the shared λ, fixed x-axis, SLO line on
      both panels — so you can read *which component* pushes each runtime's
-     samples past the deadline.
+     samples past the deadline. `plot14g_latency_composition_combined` puts
+     14e and 14f side by side as one 4-panel figure (naive-exit |
+     naive-nonexit | GATE-exit | GATE-nonexit), sharing y only within each
+     runtime's own pair. `plot14h_exit_hist_combined` is the same 4-panel
+     layout for the plain 14b/14d histograms, and
+     `plot14i_latency_composition_combined_shared_scale` is 14g's composition
+     version — but both 14h and 14i share ONE y-scale across all four panels
+     instead of per-pair, so whichever panel peaks highest (currently GATE's
+     exit class) sets the axis for every panel and naive's flatter,
+     longer-tailed distribution reads directly against it.
   14. `plot10_seg1_batch_sweep` — seg1 kernel time per op over batch sizes
      1..512 (`run.py seg1bench`; 4096 random samples per size; numbers also in
      `artifacts/results/seg1_batch_sweep.json`).
