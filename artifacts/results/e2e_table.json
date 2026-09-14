@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-09-02T17:22:52",
+    "generated_at": "2026-09-14T09:50:41",
     "N": 16384,
     "seed": 1234,
     "seg1_batch": 16,
@@ -16,36 +16,36 @@
       "step": 5.0
     },
     "divergence_lambda_capacity": {
-      "plain": 1608.352057657463,
-      "naive": 1658.4011765678076,
-      "proposed": 1716.535070414857
+      "plain": 1605.7496307529495,
+      "naive": 1649.5377342884956,
+      "proposed": 1712.9576250665805
     },
     "knee_lambda_reference": {
       "plain": 1305.0,
-      "naive": 1340.0,
-      "proposed": 1460.0
+      "naive": 1330.0,
+      "proposed": 1455.0
     },
     "D_used_for_selection": {
-      "plain": 1608.352057657463,
-      "naive": 1658.4011765678076,
-      "proposed": 1716.535070414857
+      "plain": 1605.7496307529495,
+      "naive": 1649.5377342884956,
+      "proposed": 1712.9576250665805
     },
     "lambda_selection": {
       "raw": {
-        "lambda1": 1605.0,
-        "lambda2": 1655.0,
+        "lambda1": 1600.0,
+        "lambda2": 1645.0,
         "lambda3": 1710.0
       },
       "chosen": [
-        1605.0,
-        1655.0,
+        1600.0,
+        1645.0,
         1710.0
       ],
       "notes": []
     },
     "slo": {
-      "raw_mean_ms": 43.47,
-      "raw_p99_ms": 93.961,
+      "raw_mean_ms": 40.708,
+      "raw_p99_ms": 87.171,
       "slo_avg_ms": 40,
       "slo_p99_ms": 90
     },
@@ -54,42 +54,42 @@
       "configured": {},
       "values_used": []
     },
-    "table_f_lambda": 1655.0,
+    "table_f_lambda": 1645.0,
     "sanity_checks": [
       {
         "name": "plain goodput@SLO_p99 \u2248 0.99\u00b7throughput(\u03bb1)",
         "status": "PASS",
-        "detail": "got 1561.3 vs 0.99\u00b7thr=1580.2 (\u03bb1=1605; rel. diff 1.2%)"
+        "detail": "got 1585.1 vs 0.99\u00b7thr=1576.4 (\u03bb1=1600; rel. diff 0.6%)"
       },
       {
-        "name": "throughput\u2248\u03bb (plain, \u03bb=1605)",
+        "name": "throughput\u2248\u03bb (plain, \u03bb=1600)",
         "status": "PASS",
-        "detail": "completed throughput 1596.2 vs \u03bb=1605 (rel. diff 0.6%)"
+        "detail": "completed throughput 1592.3 vs \u03bb=1600 (rel. diff 0.5%)"
       },
       {
-        "name": "throughput\u2248\u03bb (naive, \u03bb=1605)",
+        "name": "throughput\u2248\u03bb (naive, \u03bb=1600)",
         "status": "PASS",
-        "detail": "completed throughput 1608.7 vs \u03bb=1605 (rel. diff 0.2%)"
+        "detail": "completed throughput 1603.7 vs \u03bb=1600 (rel. diff 0.2%)"
       },
       {
-        "name": "throughput\u2248\u03bb (proposed, \u03bb=1605)",
+        "name": "throughput\u2248\u03bb (proposed, \u03bb=1600)",
         "status": "PASS",
-        "detail": "completed throughput 1609.5 vs \u03bb=1605 (rel. diff 0.3%)"
+        "detail": "completed throughput 1604.5 vs \u03bb=1600 (rel. diff 0.3%)"
       },
       {
-        "name": "throughput\u2248\u03bb (naive, \u03bb=1655)",
+        "name": "throughput\u2248\u03bb (naive, \u03bb=1645)",
         "status": "PASS",
-        "detail": "completed throughput 1651.0 vs \u03bb=1655 (rel. diff 0.2%)"
+        "detail": "completed throughput 1642.4 vs \u03bb=1645 (rel. diff 0.2%)"
       },
       {
-        "name": "throughput\u2248\u03bb (proposed, \u03bb=1655)",
+        "name": "throughput\u2248\u03bb (proposed, \u03bb=1645)",
         "status": "PASS",
-        "detail": "completed throughput 1659.1 vs \u03bb=1655 (rel. diff 0.3%)"
+        "detail": "completed throughput 1649.4 vs \u03bb=1645 (rel. diff 0.3%)"
       },
       {
         "name": "throughput\u2248\u03bb (proposed, \u03bb=1710)",
         "status": "PASS",
-        "detail": "completed throughput 1705.4 vs \u03bb=1710 (rel. diff 0.3%)"
+        "detail": "completed throughput 1703.8 vs \u03bb=1710 (rel. diff 0.4%)"
       },
       {
         "name": "naive accuracy == proposed accuracy",
@@ -107,102 +107,102 @@
     {
       "runtime": "plain",
       "accuracy_pct": 85.05,
-      "saturated_throughput_sps": 1608.4,
-      "divergence_lambda": 1608.4
+      "saturated_throughput_sps": 1605.7,
+      "divergence_lambda": 1605.7
     },
     {
       "runtime": "naive",
       "accuracy_pct": 82.73,
-      "saturated_throughput_sps": 1658.4,
-      "divergence_lambda": 1658.4
+      "saturated_throughput_sps": 1649.5,
+      "divergence_lambda": 1649.5
     },
     {
       "runtime": "proposed",
       "accuracy_pct": 82.73,
-      "saturated_throughput_sps": 1716.5,
-      "divergence_lambda": 1716.5
+      "saturated_throughput_sps": 1713.0,
+      "divergence_lambda": 1713.0
     }
   ],
   "table_b": [
     {
       "runtime": "plain",
-      "lambda": 1605.0,
-      "avg_ms": 43.47,
-      "p99_ms": 93.96,
-      "goodput_slo_avg": 702.7,
-      "goodput_slo_p99": 1561.3,
+      "lambda": 1600.0,
+      "avg_ms": 40.71,
+      "p99_ms": 87.17,
+      "goodput_slo_avg": 761.8,
+      "goodput_slo_p99": 1585.1,
       "diverged": false
     },
     {
       "runtime": "naive",
-      "lambda": 1605.0,
-      "avg_ms": 19.18,
-      "p99_ms": 35.9,
-      "goodput_slo_avg": 1606.2,
-      "goodput_slo_p99": 1608.7,
+      "lambda": 1600.0,
+      "avg_ms": 20.37,
+      "p99_ms": 40.62,
+      "goodput_slo_avg": 1583.6,
+      "goodput_slo_p99": 1603.7,
       "diverged": false
     },
     {
       "runtime": "proposed",
-      "lambda": 1605.0,
-      "avg_ms": 21.61,
-      "p99_ms": 46.54,
-      "goodput_slo_avg": 1534.1,
-      "goodput_slo_p99": 1609.5,
+      "lambda": 1600.0,
+      "avg_ms": 21.63,
+      "p99_ms": 46.57,
+      "goodput_slo_avg": 1527.4,
+      "goodput_slo_p99": 1604.5,
       "diverged": false
     },
     {
       "runtime": "plain",
-      "lambda": 1655.0,
-      "avg_ms": 146.52,
-      "p99_ms": 336.32,
-      "goodput_slo_avg": 284.9,
-      "goodput_slo_p99": 554.8,
+      "lambda": 1645.0,
+      "avg_ms": 125.09,
+      "p99_ms": 294.03,
+      "goodput_slo_avg": 391.9,
+      "goodput_slo_p99": 580.4,
       "diverged": true
     },
     {
       "runtime": "naive",
-      "lambda": 1655.0,
-      "avg_ms": 37.28,
-      "p99_ms": 69.35,
-      "goodput_slo_avg": 950.7,
-      "goodput_slo_p99": 1651.0,
+      "lambda": 1645.0,
+      "avg_ms": 35.69,
+      "p99_ms": 66.42,
+      "goodput_slo_avg": 1037.7,
+      "goodput_slo_p99": 1642.4,
       "diverged": false
     },
     {
       "runtime": "proposed",
-      "lambda": 1655.0,
-      "avg_ms": 24.05,
-      "p99_ms": 49.51,
-      "goodput_slo_avg": 1533.2,
-      "goodput_slo_p99": 1659.1,
+      "lambda": 1645.0,
+      "avg_ms": 23.52,
+      "p99_ms": 48.87,
+      "goodput_slo_avg": 1534.5,
+      "goodput_slo_p99": 1649.4,
       "diverged": false
     },
     {
       "runtime": "plain",
       "lambda": 1710.0,
-      "avg_ms": 302.83,
-      "p99_ms": 645.65,
-      "goodput_slo_avg": 59.0,
-      "goodput_slo_p99": 279.0,
+      "avg_ms": 310.94,
+      "p99_ms": 661.83,
+      "goodput_slo_avg": 57.8,
+      "goodput_slo_p99": 266.9,
       "diverged": true
     },
     {
       "runtime": "naive",
       "lambda": 1710.0,
-      "avg_ms": 172.09,
-      "p99_ms": 345.33,
-      "goodput_slo_avg": 79.9,
-      "goodput_slo_p99": 482.2,
+      "avg_ms": 210.7,
+      "p99_ms": 396.28,
+      "goodput_slo_avg": 23.7,
+      "goodput_slo_p99": 267.3,
       "diverged": true
     },
     {
       "runtime": "proposed",
       "lambda": 1710.0,
-      "avg_ms": 42.18,
-      "p99_ms": 82.07,
-      "goodput_slo_avg": 790.4,
-      "goodput_slo_p99": 1702.2,
+      "avg_ms": 44.13,
+      "p99_ms": 88.41,
+      "goodput_slo_avg": 734.1,
+      "goodput_slo_p99": 1690.9,
       "diverged": false
     }
   ],
@@ -211,93 +211,93 @@
     {
       "config": "plain",
       "knee_lambda": 1305.0,
-      "mean_ms": 16.29,
-      "p99_ms": 26.26,
-      "divergence_lambda": 1608.4
+      "mean_ms": 16.31,
+      "p99_ms": 26.29,
+      "divergence_lambda": 1605.7
     },
     {
       "config": "naive",
-      "knee_lambda": 1340.0,
-      "mean_ms": 14.43,
-      "p99_ms": 24.93,
-      "divergence_lambda": 1658.4
+      "knee_lambda": 1330.0,
+      "mean_ms": 14.52,
+      "p99_ms": 25.82,
+      "divergence_lambda": 1649.5
     },
     {
       "config": "proposed(bs2=4)",
       "knee_lambda": 1335.0,
-      "mean_ms": 15.45,
-      "p99_ms": 27.91,
-      "divergence_lambda": 1630.8
+      "mean_ms": 15.49,
+      "p99_ms": 28.01,
+      "divergence_lambda": 1626.2
     },
     {
       "config": "proposed(bs2=8)",
-      "knee_lambda": 1400.0,
-      "mean_ms": 16.94,
-      "p99_ms": 34.31,
-      "divergence_lambda": 1689.5
+      "knee_lambda": 1395.0,
+      "mean_ms": 16.98,
+      "p99_ms": 34.4,
+      "divergence_lambda": 1685.4
     },
     {
       "config": "proposed(bs2=16)",
-      "knee_lambda": 1460.0,
-      "mean_ms": 20.71,
-      "p99_ms": 48.17,
-      "divergence_lambda": 1716.5
+      "knee_lambda": 1455.0,
+      "mean_ms": 20.75,
+      "p99_ms": 48.34,
+      "divergence_lambda": 1713.0
     },
     {
       "config": "proposed(bs2=32)",
-      "knee_lambda": 1460.0,
-      "mean_ms": 30.76,
-      "p99_ms": 79.48,
-      "divergence_lambda": 1652.1
+      "knee_lambda": 1455.0,
+      "mean_ms": 30.83,
+      "p99_ms": 79.73,
+      "divergence_lambda": 1649.3
     }
   ],
   "table_e": [
     {
       "config": "plain",
-      "capacity_lambda": 1608.4,
-      "mean_ms": 48.9,
-      "p99_ms": 108.6,
-      "throughput_sps": 1597.1,
-      "reference_lambda": 1605.0
+      "capacity_lambda": 1605.7,
+      "mean_ms": 48.98,
+      "p99_ms": 108.78,
+      "throughput_sps": 1594.6,
+      "reference_lambda": 1600.0
     },
     {
       "config": "naive",
-      "capacity_lambda": 1658.4,
-      "mean_ms": 42.06,
-      "p99_ms": 76.71,
-      "throughput_sps": 1652.4,
-      "reference_lambda": 1655.0
+      "capacity_lambda": 1649.5,
+      "mean_ms": 39.95,
+      "p99_ms": 70.12,
+      "throughput_sps": 1645.7,
+      "reference_lambda": 1645.0
     },
     {
       "config": "proposed(bs2=4)",
-      "capacity_lambda": 1630.8,
-      "mean_ms": 48.33,
-      "p99_ms": 95.59,
-      "throughput_sps": 1622.1,
-      "reference_lambda": 1625.0
+      "capacity_lambda": 1626.2,
+      "mean_ms": 44.9,
+      "p99_ms": 89.66,
+      "throughput_sps": 1618.6,
+      "reference_lambda": 1620.0
     },
     {
       "config": "proposed(bs2=8)",
-      "capacity_lambda": 1689.5,
-      "mean_ms": 49.52,
-      "p99_ms": 96.21,
-      "throughput_sps": 1680.4,
-      "reference_lambda": 1685.0
+      "capacity_lambda": 1685.4,
+      "mean_ms": 46.08,
+      "p99_ms": 90.28,
+      "throughput_sps": 1677.4,
+      "reference_lambda": 1680.0
     },
     {
       "config": "proposed(bs2=16)",
-      "capacity_lambda": 1716.5,
-      "mean_ms": 51.58,
-      "p99_ms": 99.8,
-      "throughput_sps": 1707.5,
+      "capacity_lambda": 1713.0,
+      "mean_ms": 48.11,
+      "p99_ms": 95.41,
+      "throughput_sps": 1705.0,
       "reference_lambda": 1710.0
     },
     {
       "config": "proposed(bs2=32)",
-      "capacity_lambda": 1652.1,
-      "mean_ms": 62.4,
-      "p99_ms": 125.88,
-      "throughput_sps": 1642.3,
+      "capacity_lambda": 1649.3,
+      "mean_ms": 58.93,
+      "p99_ms": 121.7,
+      "throughput_sps": 1640.5,
       "reference_lambda": 1645.0
     }
   ],
@@ -306,29 +306,29 @@
       "runtime": "naive",
       "exit_class": "exit",
       "n": 9067,
-      "mean_ms": 36.15,
-      "p99_ms": 68.41
+      "mean_ms": 34.6,
+      "p99_ms": 65.04
     },
     {
       "runtime": "naive",
       "exit_class": "nonexit",
       "n": 7312,
-      "mean_ms": 38.73,
-      "p99_ms": 70.57
+      "mean_ms": 37.08,
+      "p99_ms": 67.67
     },
     {
       "runtime": "proposed(bs2=16)",
       "exit_class": "exit",
       "n": 9067,
-      "mean_ms": 17.81,
-      "p99_ms": 32.51
+      "mean_ms": 17.22,
+      "p99_ms": 32.04
     },
     {
       "runtime": "proposed(bs2=16)",
       "exit_class": "nonexit",
       "n": 7312,
-      "mean_ms": 31.81,
-      "p99_ms": 52.31
+      "mean_ms": 31.35,
+      "p99_ms": 51.53
     }
   ],
   "peak_goodput": {
@@ -358,344 +358,344 @@
       "default_bs2": 16,
       "common_set": "common_all (plain, naive, every bs2)",
       "peak_ratio_slo_ref_ms": 100,
-      "peak_ratio_proposed_over_naive": 1.0318,
-      "capacity_ratio_proposed_over_naive": 1.0351
+      "peak_ratio_proposed_over_naive": 1.0331,
+      "capacity_ratio_proposed_over_naive": 1.0384
     },
     "rows": [
       {
         "slo_ms": 40,
         "runtime": "plain",
-        "argmax_lambda": 1550.0,
-        "peak_goodput_sps": 1543.1,
-        "capacity_lambda": 1608.4,
+        "argmax_lambda": 1545.0,
+        "peak_goodput_sps": 1540.4,
+        "capacity_lambda": 1605.7,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 40,
         "runtime": "naive",
-        "argmax_lambda": 1605.0,
-        "peak_goodput_sps": 1606.2,
-        "capacity_lambda": 1658.4,
+        "argmax_lambda": 1595.0,
+        "peak_goodput_sps": 1585.8,
+        "capacity_lambda": 1649.5,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 40,
         "runtime": "proposed(bs2=4)",
-        "argmax_lambda": 1575.0,
-        "peak_goodput_sps": 1575.3,
-        "capacity_lambda": 1630.8,
+        "argmax_lambda": 1565.0,
+        "peak_goodput_sps": 1566.2,
+        "capacity_lambda": 1626.2,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 40,
         "runtime": "proposed(bs2=8)",
-        "argmax_lambda": 1630.0,
-        "peak_goodput_sps": 1621.2,
-        "capacity_lambda": 1689.5,
+        "argmax_lambda": 1620.0,
+        "peak_goodput_sps": 1613.3,
+        "capacity_lambda": 1685.4,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 40,
         "runtime": "proposed(bs2=16)",
         "argmax_lambda": 1635.0,
-        "peak_goodput_sps": 1546.3,
-        "capacity_lambda": 1716.5,
+        "peak_goodput_sps": 1539.0,
+        "capacity_lambda": 1713.0,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 40,
         "runtime": "proposed(bs2=32)",
-        "argmax_lambda": 1570.0,
-        "peak_goodput_sps": 1087.5,
-        "capacity_lambda": 1652.1,
+        "argmax_lambda": 1575.0,
+        "peak_goodput_sps": 1083.9,
+        "capacity_lambda": 1649.3,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 50,
         "runtime": "plain",
         "argmax_lambda": 1565.0,
-        "peak_goodput_sps": 1563.8,
-        "capacity_lambda": 1608.4,
+        "peak_goodput_sps": 1560.3,
+        "capacity_lambda": 1605.7,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 50,
         "runtime": "naive",
-        "argmax_lambda": 1625.0,
-        "peak_goodput_sps": 1621.9,
-        "capacity_lambda": 1658.4,
+        "argmax_lambda": 1615.0,
+        "peak_goodput_sps": 1614.4,
+        "capacity_lambda": 1649.5,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 50,
         "runtime": "proposed(bs2=4)",
-        "argmax_lambda": 1590.0,
-        "peak_goodput_sps": 1588.9,
-        "capacity_lambda": 1630.8,
+        "argmax_lambda": 1580.0,
+        "peak_goodput_sps": 1580.5,
+        "capacity_lambda": 1626.2,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 50,
         "runtime": "proposed(bs2=8)",
-        "argmax_lambda": 1640.0,
-        "peak_goodput_sps": 1640.9,
-        "capacity_lambda": 1689.5,
+        "argmax_lambda": 1635.0,
+        "peak_goodput_sps": 1632.5,
+        "capacity_lambda": 1685.4,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 50,
         "runtime": "proposed(bs2=16)",
-        "argmax_lambda": 1655.0,
-        "peak_goodput_sps": 1644.8,
-        "capacity_lambda": 1716.5,
+        "argmax_lambda": 1650.0,
+        "peak_goodput_sps": 1638.2,
+        "capacity_lambda": 1713.0,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 50,
         "runtime": "proposed(bs2=32)",
         "argmax_lambda": 1580.0,
-        "peak_goodput_sps": 1246.4,
-        "capacity_lambda": 1652.1,
+        "peak_goodput_sps": 1241.5,
+        "capacity_lambda": 1649.3,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 60,
         "runtime": "plain",
         "argmax_lambda": 1580.0,
-        "peak_goodput_sps": 1577.9,
-        "capacity_lambda": 1608.4,
+        "peak_goodput_sps": 1576.0,
+        "capacity_lambda": 1605.7,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 60,
         "runtime": "naive",
-        "argmax_lambda": 1635.0,
-        "peak_goodput_sps": 1634.9,
-        "capacity_lambda": 1658.4,
+        "argmax_lambda": 1630.0,
+        "peak_goodput_sps": 1627.7,
+        "capacity_lambda": 1649.5,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 60,
+        "runtime": "proposed(bs2=4)",
+        "argmax_lambda": 1595.0,
+        "peak_goodput_sps": 1592.3,
+        "capacity_lambda": 1626.2,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 60,
+        "runtime": "proposed(bs2=8)",
+        "argmax_lambda": 1650.0,
+        "peak_goodput_sps": 1645.4,
+        "capacity_lambda": 1685.4,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 60,
+        "runtime": "proposed(bs2=16)",
+        "argmax_lambda": 1665.0,
+        "peak_goodput_sps": 1661.8,
+        "capacity_lambda": 1713.0,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 60,
+        "runtime": "proposed(bs2=32)",
+        "argmax_lambda": 1580.0,
+        "peak_goodput_sps": 1398.3,
+        "capacity_lambda": 1649.3,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 70,
+        "runtime": "plain",
+        "argmax_lambda": 1585.0,
+        "peak_goodput_sps": 1581.8,
+        "capacity_lambda": 1605.7,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 70,
+        "runtime": "naive",
+        "argmax_lambda": 1640.0,
+        "peak_goodput_sps": 1638.5,
+        "capacity_lambda": 1649.5,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 70,
         "runtime": "proposed(bs2=4)",
         "argmax_lambda": 1605.0,
-        "peak_goodput_sps": 1600.3,
-        "capacity_lambda": 1630.8,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 60,
-        "runtime": "proposed(bs2=8)",
-        "argmax_lambda": 1655.0,
-        "peak_goodput_sps": 1653.6,
-        "capacity_lambda": 1689.5,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 60,
-        "runtime": "proposed(bs2=16)",
-        "argmax_lambda": 1675.0,
-        "peak_goodput_sps": 1669.1,
-        "capacity_lambda": 1716.5,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 60,
-        "runtime": "proposed(bs2=32)",
-        "argmax_lambda": 1580.0,
-        "peak_goodput_sps": 1402.1,
-        "capacity_lambda": 1652.1,
+        "peak_goodput_sps": 1602.7,
+        "capacity_lambda": 1626.2,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 70,
+        "runtime": "proposed(bs2=8)",
+        "argmax_lambda": 1660.0,
+        "peak_goodput_sps": 1657.6,
+        "capacity_lambda": 1685.4,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 70,
+        "runtime": "proposed(bs2=16)",
+        "argmax_lambda": 1685.0,
+        "peak_goodput_sps": 1675.9,
+        "capacity_lambda": 1713.0,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 70,
+        "runtime": "proposed(bs2=32)",
+        "argmax_lambda": 1590.0,
+        "peak_goodput_sps": 1526.2,
+        "capacity_lambda": 1649.3,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 80,
         "runtime": "plain",
         "argmax_lambda": 1590.0,
-        "peak_goodput_sps": 1584.0,
-        "capacity_lambda": 1608.4,
+        "peak_goodput_sps": 1585.3,
+        "capacity_lambda": 1605.7,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 70,
+        "slo_ms": 80,
         "runtime": "naive",
         "argmax_lambda": 1650.0,
-        "peak_goodput_sps": 1646.2,
-        "capacity_lambda": 1658.4,
-        "diverged_at_argmax": false
+        "peak_goodput_sps": 1646.1,
+        "capacity_lambda": 1649.5,
+        "diverged_at_argmax": true
       },
       {
-        "slo_ms": 70,
+        "slo_ms": 80,
         "runtime": "proposed(bs2=4)",
         "argmax_lambda": 1615.0,
-        "peak_goodput_sps": 1611.5,
-        "capacity_lambda": 1630.8,
+        "peak_goodput_sps": 1611.0,
+        "capacity_lambda": 1626.2,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 70,
+        "slo_ms": 80,
         "runtime": "proposed(bs2=8)",
-        "argmax_lambda": 1670.0,
-        "peak_goodput_sps": 1665.8,
-        "capacity_lambda": 1689.5,
+        "argmax_lambda": 1675.0,
+        "peak_goodput_sps": 1667.9,
+        "capacity_lambda": 1685.4,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 70,
+        "slo_ms": 80,
         "runtime": "proposed(bs2=16)",
-        "argmax_lambda": 1690.0,
-        "peak_goodput_sps": 1683.9,
-        "capacity_lambda": 1716.5,
+        "argmax_lambda": 1695.0,
+        "peak_goodput_sps": 1687.0,
+        "capacity_lambda": 1713.0,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 70,
+        "slo_ms": 80,
         "runtime": "proposed(bs2=32)",
         "argmax_lambda": 1595.0,
-        "peak_goodput_sps": 1530.5,
-        "capacity_lambda": 1652.1,
+        "peak_goodput_sps": 1586.6,
+        "capacity_lambda": 1649.3,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 80,
+        "slo_ms": 90,
         "runtime": "plain",
         "argmax_lambda": 1595.0,
-        "peak_goodput_sps": 1588.5,
-        "capacity_lambda": 1608.4,
+        "peak_goodput_sps": 1588.8,
+        "capacity_lambda": 1605.7,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 80,
+        "slo_ms": 90,
         "runtime": "naive",
-        "argmax_lambda": 1655.0,
-        "peak_goodput_sps": 1651.0,
-        "capacity_lambda": 1658.4,
-        "diverged_at_argmax": false
+        "argmax_lambda": 1650.0,
+        "peak_goodput_sps": 1646.1,
+        "capacity_lambda": 1649.5,
+        "diverged_at_argmax": true
       },
       {
-        "slo_ms": 80,
+        "slo_ms": 90,
         "runtime": "proposed(bs2=4)",
         "argmax_lambda": 1625.0,
-        "peak_goodput_sps": 1619.3,
-        "capacity_lambda": 1630.8,
+        "peak_goodput_sps": 1616.0,
+        "capacity_lambda": 1626.2,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 80,
+        "slo_ms": 90,
         "runtime": "proposed(bs2=8)",
         "argmax_lambda": 1680.0,
-        "peak_goodput_sps": 1675.4,
-        "capacity_lambda": 1689.5,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 80,
-        "runtime": "proposed(bs2=16)",
-        "argmax_lambda": 1700.0,
-        "peak_goodput_sps": 1693.8,
-        "capacity_lambda": 1716.5,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 80,
-        "runtime": "proposed(bs2=32)",
-        "argmax_lambda": 1600.0,
-        "peak_goodput_sps": 1591.6,
-        "capacity_lambda": 1652.1,
+        "peak_goodput_sps": 1674.2,
+        "capacity_lambda": 1685.4,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 90,
+        "runtime": "proposed(bs2=16)",
+        "argmax_lambda": 1705.0,
+        "peak_goodput_sps": 1695.5,
+        "capacity_lambda": 1713.0,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 90,
+        "runtime": "proposed(bs2=32)",
+        "argmax_lambda": 1610.0,
+        "peak_goodput_sps": 1605.6,
+        "capacity_lambda": 1649.3,
+        "diverged_at_argmax": false
+      },
+      {
+        "slo_ms": 100,
         "runtime": "plain",
         "argmax_lambda": 1600.0,
-        "peak_goodput_sps": 1592.5,
-        "capacity_lambda": 1608.4,
+        "peak_goodput_sps": 1592.3,
+        "capacity_lambda": 1605.7,
         "diverged_at_argmax": false
       },
       {
-        "slo_ms": 90,
+        "slo_ms": 100,
         "runtime": "naive",
-        "argmax_lambda": 1660.0,
-        "peak_goodput_sps": 1652.2,
-        "capacity_lambda": 1658.4,
+        "argmax_lambda": 1655.0,
+        "peak_goodput_sps": 1647.6,
+        "capacity_lambda": 1649.5,
         "diverged_at_argmax": true
       },
       {
-        "slo_ms": 90,
+        "slo_ms": 100,
         "runtime": "proposed(bs2=4)",
         "argmax_lambda": 1625.0,
-        "peak_goodput_sps": 1620.2,
-        "capacity_lambda": 1630.8,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 90,
-        "runtime": "proposed(bs2=8)",
-        "argmax_lambda": 1685.0,
-        "peak_goodput_sps": 1678.6,
-        "capacity_lambda": 1689.5,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 90,
-        "runtime": "proposed(bs2=16)",
-        "argmax_lambda": 1710.0,
-        "peak_goodput_sps": 1702.2,
-        "capacity_lambda": 1716.5,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 90,
-        "runtime": "proposed(bs2=32)",
-        "argmax_lambda": 1620.0,
-        "peak_goodput_sps": 1611.8,
-        "capacity_lambda": 1652.1,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 100,
-        "runtime": "plain",
-        "argmax_lambda": 1605.0,
-        "peak_goodput_sps": 1594.5,
-        "capacity_lambda": 1608.4,
-        "diverged_at_argmax": false
-      },
-      {
-        "slo_ms": 100,
-        "runtime": "naive",
-        "argmax_lambda": 1660.0,
-        "peak_goodput_sps": 1652.8,
-        "capacity_lambda": 1658.4,
-        "diverged_at_argmax": true
-      },
-      {
-        "slo_ms": 100,
-        "runtime": "proposed(bs2=4)",
-        "argmax_lambda": 1630.0,
-        "peak_goodput_sps": 1621.1,
-        "capacity_lambda": 1630.8,
+        "peak_goodput_sps": 1618.2,
+        "capacity_lambda": 1626.2,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 100,
         "runtime": "proposed(bs2=8)",
         "argmax_lambda": 1685.0,
-        "peak_goodput_sps": 1679.2,
-        "capacity_lambda": 1689.5,
+        "peak_goodput_sps": 1676.4,
+        "capacity_lambda": 1685.4,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 100,
         "runtime": "proposed(bs2=16)",
         "argmax_lambda": 1710.0,
-        "peak_goodput_sps": 1705.4,
-        "capacity_lambda": 1716.5,
+        "peak_goodput_sps": 1702.1,
+        "capacity_lambda": 1713.0,
         "diverged_at_argmax": false
       },
       {
         "slo_ms": 100,
         "runtime": "proposed(bs2=32)",
-        "argmax_lambda": 1630.0,
-        "peak_goodput_sps": 1624.3,
-        "capacity_lambda": 1652.1,
+        "argmax_lambda": 1620.0,
+        "peak_goodput_sps": 1617.7,
+        "capacity_lambda": 1649.3,
         "diverged_at_argmax": false
       }
     ]
