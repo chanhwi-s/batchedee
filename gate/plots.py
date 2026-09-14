@@ -946,63 +946,43 @@ def _exit_split_kde_fig(cfg: Config, runtime: str, schedules: dict, name: str,
 
 def _exit_split_hist_fig(cfg: Config, runtime: str, schedules: dict, name: str,
                          lam=None, slo_ms=None, xmax=None, simple=False):
-    """Shared body of 13b/13d (and 14b/14d) — the same split, no smoothing.
-
-    `plots.exit_split_hist_stacked` (default true): the classes are disjoint
-    subsets of the same population, so stacking them reproduces the runtime's
-    pooled histogram exactly and shows how the components fill in each other's
-    gaps. Set false for an overlaid (alpha-blended) comparison of the two
-    shapes instead. Bins/x-range follow plot12 (plots.hist_bins, the KDE
-    x-clip); samples past the clip fall outside the edges and are dropped.
+    """Shared body of 13b/13d (and 14b/14d): one subplot per exit class
+    (exit | non-exit), same layout as 13e/13f (and 14e/14f) rather than
+    overlaying/stacking both classes on one axis. Bins/x-range follow plot12
+    (plots.hist_bins, the KDE x-clip); samples past the clip fall outside the
+    edges and are dropped.
     """
     data, pooled, desc, label = _exit_split(cfg, schedules, runtime, name, lam)
     bins = int(cfg.get_path("plots.hist_bins", 80))
     density = bool(cfg.get_path("plots.hist_density", False))
-    stacked = bool(cfg.get_path("plots.exit_split_hist_stacked", True))
 
     lo = float(pooled.min())
     hi = _exit_split_hi(cfg, pooled, name, xmax)
     edges = np.linspace(lo, hi, bins + 1)
 
-    fig, ax = plt.subplots(figsize=FIG_SINGLE)
-    _slo_marks(ax, slo_ms, pooled=pooled, annotate=simple)
-    order = list(EXIT_CLASS_ORDER)
+    fig, axes = plt.subplots(1, 2, figsize=FIG_DOUBLE, sharex=True, sharey=True)
     by_class = dict(data)
     # "bar" gives one patch per bin, which _slo_color_bars needs; "stepfilled"
-    # collapses each dataset into a single polygon.
+    # collapses the dataset into a single polygon.
     htype = "bar" if _slo_values(slo_ms) else "stepfilled"
-    containers = []
-    if stacked:
-        _, _, containers = ax.hist(
-            [by_class[c] for c in order], bins=edges, density=density,
-            stacked=True, histtype=htype,
-            color=[EXIT_CLASS_COLORS[c] for c in order],
-            label=[_exit_class_label(c, simple) for c in order],
+    for ax, c in zip(axes, EXIT_CLASS_ORDER):
+        l = by_class[c]
+        _slo_marks(ax, slo_ms, pooled=l, annotate=simple)
+        _, _, cont = ax.hist(
+            l, bins=edges, density=density, histtype=htype,
+            color=EXIT_CLASS_COLORS[c], label=_exit_class_label(c, simple),
             edgecolor="white", linewidth=0.3)
-        # per-class hatch (ax.hist takes no hatch list) — keeps the stack
-        # readable in grayscale. plot14 drops it: the green/amber pair already
-        # separates by luminance and the texture only adds clutter there.
-        for c, cont in zip(order, containers):
-            h = None if simple else EXIT_CLASS_STYLES[c]["hatch"]
-            if h:
-                for patch in cont:
-                    patch.set_hatch(h)
-    else:
-        for c, l in data:
-            _, _, cont = ax.hist(
-                l, bins=edges, density=density, histtype=htype,
-                alpha=0.35, color=EXIT_CLASS_COLORS[c],
-                edgecolor=EXIT_CLASS_COLORS[c], linewidth=1.1,
-                hatch=None if simple else EXIT_CLASS_STYLES[c]["hatch"],
-                label=_exit_class_label(c, simple))
-            containers.append(cont)
-    _slo_color_bars(containers, edges, slo_ms)
+        h = None if simple else EXIT_CLASS_STYLES[c]["hatch"]
+        if h:
+            for patch in cont:
+                patch.set_hatch(h)
+        _slo_color_bars([cont], edges, slo_ms)
+        ax.set_xlim(lo, hi)
+        ax.legend(loc="upper right")
 
-    ax.set_xlim(lo, hi)
-    ax.set_xlabel("Latency (ms)")
-    ax.set_ylabel("Density" if density else "Count")
-    ax.set_title(_exit_split_title(label, desc, simple))
-    ax.legend(loc="upper right")
+    axes[0].set_ylabel("Density" if density else "Count")
+    axes[len(axes) // 2].set_xlabel("Latency (ms)")
+    fig.suptitle(_exit_split_title(label, desc, simple))
     return fig
 
 
@@ -1206,9 +1186,9 @@ def _composition_pair(cfg: Config, runtime: str, schedules: dict, name: str,
     in one 4-panel figure, where `title_prefix` disambiguates which pair is
     which).
 
-    `plots.composition_bins` (default 40) is deliberately coarser than
-    `hist_bins`: 80 thin bars cut into five colors is unreadable at print
-    size. Skipped in saturated mode, where latency is measured from the
+    Bins follow `plots.hist_bins` — the same bin count as 13b/13d and
+    14b/14d, so bar heights are directly comparable across the two figure
+    types. Skipped in saturated mode, where latency is measured from the
     stage-1 op start and therefore no longer equals the sum of the
     arrival-referenced components.
 
@@ -1230,7 +1210,7 @@ def _composition_pair(cfg: Config, runtime: str, schedules: dict, name: str,
 
     bd = simulate_breakdown(sched, arr)
     comps = {k: bd[k][common] * 1000.0 for k in BREAKDOWN_KEYS}
-    bins = int(cfg.get_path("plots.composition_bins", 40))
+    bins = int(cfg.get_path("plots.hist_bins", 80))
     lo = float(pooled.min()) if lo is None else float(lo)
     hi = _exit_split_hi(cfg, pooled, name, xmax) if hi is None else float(hi)
     edges = np.linspace(lo, hi, bins + 1)

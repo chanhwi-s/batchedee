@@ -165,8 +165,9 @@ Outputs:
      non-exit samples also wait for the seg2 queue to fill (gap ≈ 14.5 ms,
      d ≈ 2.3 → the split is real and visible). The `"mixture"` normalization
      scales each class KDE by its sample share so the two sum to the pooled
-     density (gray); the histograms stack the two disjoint classes so they
-     reproduce the pooled histogram. λ defaults to each runtime's own
+     density (gray); the histograms draw exit | non-exit as two subplots
+     (same layout as 13e/13f below) rather than one overlaid/stacked axis.
+     λ defaults to each runtime's own
      capacity×margin (same point as plot2/3/12b); override per runtime with
      `plots.exit_split_lambda`. Mean gap, pooled sd and Cohen's d are printed
      to stdout — quote them in the caption. Setting `exit_split_lambda: 0`
@@ -182,10 +183,11 @@ Outputs:
      for naive the growing band is formation + GPU wait while stage-2 compute
      stays a thin constant sliver (exactly why 13a/13b show no split), whereas
      proposed's non-exit panel is taken over by stage-2 queue wait on the
-     right. `plots.composition_bins` (default 40) is coarser than `hist_bins`
-     on purpose; `gpu_wait` is included because the five components must sum to
-     the latency. Skipped in saturated mode. Per-class component means and
-     percentages are printed to stdout.
+     right. Bins follow `plots.hist_bins` — the same count as 13b/13d, so bar
+     heights are directly comparable across the two figure types; `gpu_wait`
+     is included because the five components must sum to the latency.
+     Skipped in saturated mode. Per-class component means and percentages are
+     printed to stdout.
   14. `plot14a`–`plot14d` (`..._naive_exit_kde_iso` / `..._naive_exit_hist_iso` /
      `..._proposed_exit_kde_iso` / `..._proposed_exit_hist_iso`) — 13a–13d
      again, pinned to ONE shared λ and annotated with the SLO deadline.

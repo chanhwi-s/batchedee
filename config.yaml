@@ -200,19 +200,19 @@ plots:
   #                            in gray); "each" -> each normalized to unit area
   #   exit_split_show_pooled : draw the pooled KDE as a gray reference
   #                            (only meaningful with "mixture")
-  #   exit_split_hist_stacked: 13b/13d stack the two disjoint classes (sums to
-  #                            the pooled histogram); false -> overlaid
   # Bandwidth / bins / x-range are inherited from kde_* and hist_bins above.
+  # 13b/13d (and 14b/14d) are two subplots — exit | non-exit — one histogram
+  # per class, same layout as 13e/13f/14e/14f below (not overlaid/stacked on
+  # one axis).
   # Plot 13e/13f — the 13b/13d histogram with every bar cut by WHERE its
   # samples spent their time: bar height is still the bin count, the colors are
   # that bin's mean latency composition (formation wait / GPU wait / stage-1 /
   # stage-2 queue wait / stage-2 compute, same palette as plot5/6). Two panels
   # per figure: exit | non-exit. naive's stage-2 queue wait band is absent by
   # construction. Skipped when exit_split_lambda is saturated (the components
-  # are arrival-referenced and would not sum to the plotted latency).
-  #   composition_bins: coarser than hist_bins on purpose — 80 thin bars cut
-  #                     into five colors is unreadable at print size.
-  composition_bins: 40
+  # are arrival-referenced and would not sum to the plotted latency). Bins are
+  # the same `hist_bins` count as 13b/13d/14b/14d, so bar heights across the
+  # two figure types are directly comparable.
   # Plot 14a-14g — 13a-13d again, but pinned to ONE shared λ and annotated
   # with the SLO deadline, so naive (14a/14b/14e) and proposed (14c/14d/14f)
   # are directly comparable: same offered load, only the batching structure
@@ -240,7 +240,6 @@ plots:
   exit_split_lambda: null
   exit_split_normalize: "mixture"
   exit_split_show_pooled: true
-  exit_split_hist_stacked: true
   # Plot 1d (peak_goodput.{json,csv} / plot1d_peak_goodput_bars): SLO sweep for
   # the peak-goodput scan (plain/naive/every bs2, each at its OWN goodput-
   # maximizing λ over the whole lambda_sweep grid). FIXED and explicit, unlike
